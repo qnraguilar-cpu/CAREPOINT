@@ -2416,6 +2416,59 @@
             }
         }
 
+        /* ---------- Realtime sync (live messaging across devices) ----------
+           Subscribes to Postgres change events on `threads` so that when
+           one device sends a message (sbUpsert('threads', ...)), every
+           other open device gets the update pushed to it instantly and
+           re-renders — no refresh needed.
+           Requires Realtime to be enabled for the `threads` table in
+           Supabase (Database → Replication, or run:
+             alter publication supabase_realtime add table threads;
+           ). */
+        let realtimeChannel = null;
+        function setupRealtimeThreads() {
+            if (!sbEnabled() || realtimeChannel) return;
+            realtimeChannel = sb.channel('threads-realtime')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'threads' }, (payload) => {
+                    handleThreadRealtimeEvent(payload);
+                })
+                .subscribe((status) => {
+                    if (status === 'SUBSCRIBED') console.log('[Supabase] Realtime messaging connected');
+                });
+        }
+        function handleThreadRealtimeEvent(payload) {
+            const { eventType, new: newRow, old: oldRow } = payload;
+            if (eventType === 'DELETE') {
+                const id = oldRow && oldRow.id;
+                DB.threads = DB.threads.filter(t => t.id !== id);
+                update();
+                return;
+            }
+            const incoming = fromRow('threads', newRow);
+            if (!incoming) return;
+            const idx = DB.threads.findIndex(t => t.id === incoming.id);
+            const wasNew = idx === -1;
+            const previous = wasNew ? null : DB.threads[idx];
+            if (wasNew) DB.threads.push(incoming);
+            else DB.threads[idx] = incoming;
+
+            // If this device currently has that thread open, surface the new
+            // message immediately and mark it read on this side.
+            const role = state.activeRole;
+            const viewingThisThread = role && state[role] && state[role].threadId === incoming.id
+                && state[role].view === 'thread';
+            const gotNewMessage = previous ? incoming.messages.length > previous.messages.length : incoming.messages.length > 0;
+            if (viewingThisThread) {
+                if (role === 'customer') incoming.unreadForCustomer = false;
+                if (role === 'staff') incoming.unreadForStaff = false;
+                if (gotNewMessage) {
+                    const last = incoming.messages[incoming.messages.length - 1];
+                    if (last && last.from !== role) toast('New message received.', 'success');
+                }
+            }
+            update();
+        }
+
         /* Keep a snapshot of the built-in seed so we can upload it if Supabase is empty. */
         const LOCAL_SEED = {
             pharmacies: null, customers: null, staff: null, admins: null,
@@ -6529,6 +6582,7 @@
                 } else if (seeded) {
                     await loadAllFromSupabase();
                 }
+                setupRealtimeThreads();
                 toast('Connected to Supabase — changes sync to the database.', 'success');
             }
             update();
