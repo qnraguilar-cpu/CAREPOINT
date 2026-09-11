@@ -2427,13 +2427,25 @@
            ). */
         let realtimeChannel = null;
         function setupRealtimeThreads() {
-            if (!sbEnabled() || realtimeChannel) return;
+            if (!sbEnabled()) { console.warn('[Realtime] Skipped — Supabase not enabled.'); return; }
+            if (realtimeChannel) return;
+            console.log('[Realtime] Subscribing to threads channel…');
             realtimeChannel = sb.channel('threads-realtime')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'threads' }, (payload) => {
+                    console.log('[Realtime] Event received:', payload.eventType, payload);
                     handleThreadRealtimeEvent(payload);
                 })
-                .subscribe((status) => {
-                    if (status === 'SUBSCRIBED') console.log('[Supabase] Realtime messaging connected');
+                .subscribe((status, err) => {
+                    console.log('[Realtime] Channel status:', status, err || '');
+                    if (status === 'SUBSCRIBED') {
+                        console.log('[Realtime] ✅ Connected — listening for live messages.');
+                    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                        console.error('[Realtime] ❌ Failed to connect.', err);
+                        toast('Live messaging sync failed to connect — see console for details.', 'error');
+                    } else if (status === 'CLOSED') {
+                        console.warn('[Realtime] Channel closed.');
+                        realtimeChannel = null;
+                    }
                 });
         }
         function handleThreadRealtimeEvent(payload) {
@@ -2465,6 +2477,103 @@
                     const last = incoming.messages[incoming.messages.length - 1];
                     if (last && last.from !== role) toast('New message received.', 'success');
                 }
+            }
+            update();
+        }
+
+        /* ---------- Realtime: live order + notification sync ----------
+           `orders` powers live "New Orders" counts for staff/admin and
+           live status updates for customers. `notifications` pushes the
+           toast + bell-badge the moment notifyOrderEvent() fires on
+           another device. Both need to be added to the supabase_realtime
+           publication, same as `threads`:
+             alter publication supabase_realtime add table orders;
+             alter publication supabase_realtime add table notifications;
+        */
+        let realtimeOrdersChannel = null;
+        function setupRealtimeOrders() {
+            if (!sbEnabled() || realtimeOrdersChannel) return;
+            realtimeOrdersChannel = sb.channel('orders-realtime')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+                    console.log('[Realtime] Orders event:', payload.eventType, payload);
+                    handleOrderRealtimeEvent(payload);
+                })
+                .subscribe((status, err) => {
+                    console.log('[Realtime] Orders channel status:', status, err || '');
+                    if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                        console.error('[Realtime] Orders channel failed.', err);
+                    } else if (status === 'CLOSED') {
+                        realtimeOrdersChannel = null;
+                    }
+                });
+        }
+        function handleOrderRealtimeEvent(payload) {
+            const { eventType, new: newRow, old: oldRow } = payload;
+            if (eventType === 'DELETE') {
+                const id = oldRow && oldRow.id;
+                DB.orders = DB.orders.filter(o => o.id !== id);
+                update();
+                return;
+            }
+            const incoming = fromRow('orders', newRow);
+            if (!incoming) return;
+            const idx = DB.orders.findIndex(o => o.id === incoming.id);
+            const isNewOrder = idx === -1;
+            if (isNewOrder) DB.orders.push(incoming);
+            else DB.orders[idx] = incoming;
+
+            // Alert the pharmacy's own staff, and platform admins, the moment
+            // a brand-new order comes in — this is what makes the "New
+            // Orders" jar and toast update without a refresh.
+            if (isNewOrder && eventType === 'INSERT') {
+                const role = state.activeRole;
+                const staffPh = role === 'staff' && state.session.staff ? currentStaffPharmacy() : null;
+                const isRelevantStaff = staffPh && staffPh.id === incoming.pharmacyId;
+                const isAdmin = role === 'admin' && state.session.admin;
+                if (isRelevantStaff || isAdmin) {
+                    toast('🛎️ New order #' + incoming.id.replace('o', '') + ' received!', 'success');
+                }
+            }
+            update();
+        }
+
+        let realtimeNotificationsChannel = null;
+        function setupRealtimeNotifications() {
+            if (!sbEnabled() || realtimeNotificationsChannel) return;
+            realtimeNotificationsChannel = sb.channel('notifications-realtime')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, (payload) => {
+                    console.log('[Realtime] Notifications event:', payload.eventType, payload);
+                    handleNotificationRealtimeEvent(payload);
+                })
+                .subscribe((status, err) => {
+                    console.log('[Realtime] Notifications channel status:', status, err || '');
+                    if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                        console.error('[Realtime] Notifications channel failed.', err);
+                    } else if (status === 'CLOSED') {
+                        realtimeNotificationsChannel = null;
+                    }
+                });
+        }
+        function handleNotificationRealtimeEvent(payload) {
+            const { eventType, new: newRow, old: oldRow } = payload;
+            if (eventType === 'DELETE') {
+                const id = oldRow && oldRow.id;
+                DB.notifications = DB.notifications.filter(n => n.id !== id);
+                update();
+                return;
+            }
+            const incoming = fromRow('notifications', newRow);
+            if (!incoming) return;
+            const idx = DB.notifications.findIndex(n => n.id === incoming.id);
+            const isNew = idx === -1;
+            if (isNew) DB.notifications.unshift(incoming);
+            else DB.notifications[idx] = incoming;
+
+            // Toast the customer this notification belongs to, if they're
+            // the one currently signed in on this device.
+            if (isNew && eventType === 'INSERT' && state.activeRole === 'customer' &&
+                state.session.customer === incoming.customerId) {
+                toast('🔔 ' + incoming.text, 'success');
             }
             update();
         }
@@ -6583,6 +6692,8 @@
                     await loadAllFromSupabase();
                 }
                 setupRealtimeThreads();
+                setupRealtimeOrders();
+                setupRealtimeNotifications();
                 toast('Connected to Supabase — changes sync to the database.', 'success');
             }
             update();
