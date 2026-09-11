@@ -2578,6 +2578,45 @@
             update();
         }
 
+        /* ---------- Realtime: live product catalog sync ----------
+           Pushes new/updated/removed medicines to every open shop page
+           instantly (new listings, price/stock changes, delisting).
+           Needs adding to the publication too:
+             alter publication supabase_realtime add table medicines;
+        */
+        let realtimeMedicinesChannel = null;
+        function setupRealtimeMedicines() {
+            if (!sbEnabled() || realtimeMedicinesChannel) return;
+            realtimeMedicinesChannel = sb.channel('medicines-realtime')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'medicines' }, (payload) => {
+                    console.log('[Realtime] Medicines event:', payload.eventType, payload);
+                    handleMedicineRealtimeEvent(payload);
+                })
+                .subscribe((status, err) => {
+                    console.log('[Realtime] Medicines channel status:', status, err || '');
+                    if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                        console.error('[Realtime] Medicines channel failed.', err);
+                    } else if (status === 'CLOSED') {
+                        realtimeMedicinesChannel = null;
+                    }
+                });
+        }
+        function handleMedicineRealtimeEvent(payload) {
+            const { eventType, new: newRow, old: oldRow } = payload;
+            if (eventType === 'DELETE') {
+                const id = oldRow && oldRow.id;
+                DB.medicines = DB.medicines.filter(m => m.id !== id);
+                update();
+                return;
+            }
+            const incoming = fromRow('medicines', newRow);
+            if (!incoming) return;
+            const idx = DB.medicines.findIndex(m => m.id === incoming.id);
+            if (idx === -1) DB.medicines.push(incoming);
+            else DB.medicines[idx] = incoming;
+            update();
+        }
+
         /* Keep a snapshot of the built-in seed so we can upload it if Supabase is empty. */
         const LOCAL_SEED = {
             pharmacies: null, customers: null, staff: null, admins: null,
@@ -6694,6 +6733,7 @@
                 setupRealtimeThreads();
                 setupRealtimeOrders();
                 setupRealtimeNotifications();
+                setupRealtimeMedicines();
                 toast('Connected to Supabase — changes sync to the database.', 'success');
             }
             update();
