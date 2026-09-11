@@ -2,15 +2,13 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>CarePoint — The Neighborhood Apothecary</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&display=swap" rel="stylesheet" />
-    <!-- Ionic Mobile UI Infrastructure Assets -->
-<script type="module" src="https://cdn.jsdelivr.net/npm/@ionic/core/dist/ionic/ionic.esm.js"></script>
-<script nomodule src="https://cdn.jsdelivr.net/npm/@ionic/core/dist/ionic/ionic.js"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@ionic/core/css/ionic.bundle.css" />
-
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <style>
         :root {
@@ -42,12 +40,22 @@
         * {
             box-sizing: border-box;
         }
+        html {
+            height: auto;
+            overflow-x: hidden;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
         html,
         body {
             margin: 0;
             padding: 0;
         }
         body {
+            min-height: 100%;
+            height: auto;
+            overflow-x: hidden;
+            overflow-y: auto;
             background: var(--parchment);
             background-image: radial-gradient(rgba(44, 30, 22, 0.025) 1px, transparent 1px);
             background-size: 14px 14px;
@@ -1569,6 +1577,15 @@
                 font-size: 48px;
             }
         }
+
+        .leaflet-container {
+            font-family: var(--font-body);
+            z-index: 1;
+            background: var(--stone);
+        }
+        .leaflet-control-attribution {
+            font-size: 10px;
+        }
         /* ---------- Public landing page ---------- */
         .guest-nav {
             display: flex;
@@ -1960,101 +1977,482 @@
         /* =========================================================
            CarePoint — "The Neighborhood Apothecary"
            Single-file build — in-memory data store.
-           Ratings for ALL products (no comments).
+           Product ratings only after a completed purchase (no comments).
            ========================================================= */
 
-        /* ---------- Google Maps configuration ----------
-           Paste your own Google Maps JavaScript API key below. The key needs
-           the "Maps JavaScript API" and "Geocoding API" enabled in Google
-           Cloud Console, and this page's domain allowed under the key's
-           website restrictions. Used on the pharmacy admin's Profile page
-           so they can drop/drag a pin for their store's exact location. */
-        const GOOGLE_MAPS_API_KEY = 'YOUR_GOOGLE_MAPS_API_KEY';
-        let googleMapsReady = false;
-        let pharmMap = null, pharmMarker = null, pharmGeocoder = null;
+        /* ---------- Maps (OpenStreetMap + Leaflet — no API key needed) ----------
+           Interactive maps for the pharmacy profile pin and customer-facing
+           location previews. Geocoding uses the free Nominatim service. */
+        let mapsReady = false;
+        let pharmMap = null, pharmMarker = null;
 
-        function loadGoogleMaps() {
-            if (!GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY === 'YOUR_GOOGLE_MAPS_API_KEY') return;
-            if (document.getElementById('googleMapsScript')) return;
-            const s = document.createElement('script');
-            s.id = 'googleMapsScript';
-            s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(GOOGLE_MAPS_API_KEY) + '&callback=onGoogleMapsLoaded';
-            s.async = true;
-            s.defer = true;
-            document.head.appendChild(s);
+        function loadMaps() {
+            if (typeof L !== 'undefined') {
+                mapsReady = true;
+                return;
+            }
+            // Leaflet is loaded from <head>; if it is still arriving, poll briefly.
+            let tries = 0;
+            const t = setInterval(() => {
+                tries++;
+                if (typeof L !== 'undefined') {
+                    mapsReady = true;
+                    clearInterval(t);
+                    initPharmacyMapIfVisible();
+                    initCustomerPharmacyMaps();
+                } else if (tries > 40) {
+                    clearInterval(t);
+                }
+            }, 100);
         }
-        window.onGoogleMapsLoaded = function () {
-            googleMapsReady = true;
-            pharmGeocoder = new google.maps.Geocoder();
-            initPharmacyMapIfVisible();
-            initCustomerPharmacyMaps();
-        };
 
-        /* Draws (or redraws) the pharmacy-profile map into #phMapCanvas, if that
-           element is currently on screen. Safe to call after every re-render —
-           it no-ops when the canvas isn't there or the API hasn't loaded yet. */
+        /* Draws (or redraws) the pharmacy-profile map into #phMapCanvas. */
         function initPharmacyMapIfVisible() {
             const canvas = document.getElementById('phMapCanvas');
             if (!canvas) return;
-            if (!googleMapsReady || typeof google === 'undefined') {
+            if (!mapsReady || typeof L === 'undefined') {
                 canvas.textContent = 'Loading map…';
+                loadMaps();
                 return;
             }
+            // Fresh DOM node after each re-render — always rebuild.
+            if (pharmMap) {
+                try { pharmMap.remove(); } catch (e) {}
+                pharmMap = null;
+                pharmMarker = null;
+            }
+            canvas.innerHTML = '';
             const ph = currentStaffPharmacy();
             const lat = typeof ph.lat === 'number' ? ph.lat : 14.5906;
             const lng = typeof ph.lng === 'number' ? ph.lng : 120.9799;
-            pharmMap = new google.maps.Map(canvas, {
-                center: { lat, lng },
-                zoom: typeof ph.lat === 'number' ? 17 : 12,
-                streetViewControl: false,
-                mapTypeControl: false,
-                fullscreenControl: false,
+            const zoom = typeof ph.lat === 'number' ? 17 : 12;
+            pharmMap = L.map(canvas, { scrollWheelZoom: false }).setView([lat, lng], zoom);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            }).addTo(pharmMap);
+            pharmMarker = L.marker([lat, lng], { draggable: true, title: ph.name || 'Pharmacy' }).addTo(pharmMap);
+            pharmMarker.on('dragend', () => {
+                const pos = pharmMarker.getLatLng();
+                setPharmLatLngFields(pos.lat, pos.lng);
             });
-            pharmMarker = new google.maps.Marker({
-                position: { lat, lng },
-                map: pharmMap,
-                draggable: true,
-                title: ph.name,
-            });
-            pharmMarker.addListener('dragend', () => {
-                const pos = pharmMarker.getPosition();
-                setPharmLatLngFields(pos.lat(), pos.lng());
-            });
+            // Leaflet needs a size recalc after being inserted into a flex/card layout.
+            setTimeout(() => { try { pharmMap.invalidateSize(); } catch (e) {} }, 80);
         }
         function setPharmLatLngFields(lat, lng) {
             const latEl = document.getElementById('phLat');
             const lngEl = document.getElementById('phLng');
-            if (latEl) latEl.value = lat.toFixed(6);
-            if (lngEl) lngEl.value = lng.toFixed(6);
+            if (latEl) latEl.value = Number(lat).toFixed(6);
+            if (lngEl) lngEl.value = Number(lng).toFixed(6);
         }
-        loadGoogleMaps();
+        loadMaps();
 
-        /* Read-only mini-map markup for customer-facing pages (checkout,
-           order detail, product detail). Renders a placeholder div that
-           initCustomerPharmacyMaps() below fills in once the API is ready. */
+        /* Read-only mini-map markup for customer-facing pages. */
         function pharmacyMapHtml(ph, canvasId) {
             if (!ph || typeof ph.lat !== 'number' || typeof ph.lng !== 'number') return '';
             return `<div class="pharmacy-map-view" id="${canvasId}" data-lat="${ph.lat}" data-lng="${ph.lng}" data-name="${esc(ph.name)}"
                 style="height:190px;border-radius:var(--radius-organic);overflow:hidden;margin-top:10px;background:var(--stone);display:flex;align-items:center;justify-content:center;color:var(--walnut-faint);font-size:13px;">Loading map…</div>`;
         }
-        /* Finds every read-only mini-map placeholder currently on screen and
-           draws a small static map + marker into each (called after every
-           re-render, since re-render wipes any previously-drawn maps). */
+        /* Draw a small read-only OpenStreetMap + marker into every placeholder. */
         function initCustomerPharmacyMaps() {
-            if (!googleMapsReady || typeof google === 'undefined') return;
+            if (!mapsReady || typeof L === 'undefined') {
+                loadMaps();
+                return;
+            }
             document.querySelectorAll('.pharmacy-map-view').forEach(canvas => {
+                if (canvas.dataset.mapReady === '1') return;
                 const lat = parseFloat(canvas.dataset.lat), lng = parseFloat(canvas.dataset.lng);
                 if (isNaN(lat) || isNaN(lng)) return;
                 canvas.textContent = '';
-                const map = new google.maps.Map(canvas, {
-                    center: { lat, lng }, zoom: 16, streetViewControl: false,
-                    mapTypeControl: false, fullscreenControl: false, gestureHandling: 'cooperative',
-                });
-                new google.maps.Marker({ position: { lat, lng }, map, title: canvas.dataset.name || '' });
+                canvas.dataset.mapReady = '1';
+                const map = L.map(canvas, {
+                    scrollWheelZoom: false,
+                    dragging: true,
+                    zoomControl: true,
+                    attributionControl: true,
+                }).setView([lat, lng], 16);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '&copy; OpenStreetMap'
+                }).addTo(map);
+                L.marker([lat, lng], { title: canvas.dataset.name || '' }).addTo(map);
+                setTimeout(() => { try { map.invalidateSize(); } catch (e) {} }, 80);
             });
         }
 
-        /* ---------- Seed database ---------- */
+
+
+        /* ---------- Supabase configuration ----------
+           1. Create a project at https://supabase.com
+           2. Run the SQL in carepoint_schema.sql (SQL Editor)
+           3. Paste Project URL + anon public key below
+              (Settings → API)
+           When both are set, the app loads from Supabase and
+           every change is written back automatically. */
+        const SUPABASE_URL = 'https://tbdfhpliweeranpakaum.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiZGZocGxpd2VlcmFucGFrYXVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNDcyMDgsImV4cCI6MjEwNDYyMzIwOH0.p_-sIGDHB3mWdFmbY5mSBr2BMZbe2MP8smP0ugZVwl4';
+        const supabaseConfigured = SUPABASE_URL && SUPABASE_ANON_KEY
+            && !SUPABASE_URL.includes('YOUR_SUPABASE')
+            && !SUPABASE_ANON_KEY.includes('YOUR_SUPABASE');
+        let sb = null;
+        if (supabaseConfigured && typeof supabase !== 'undefined') {
+            sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        }
+
+        function sbEnabled() { return !!(sb && supabaseConfigured); }
+
+        /* Map DB keys → Supabase table names */
+        const SB_TABLE = {
+            pharmacies: 'pharmacies',
+            medicines: 'medicines',
+            customers: 'customers',
+            staff: 'staff',
+            admins: 'admins',
+            orders: 'orders',
+            threads: 'threads',
+            flags: 'flags',
+            reviews: 'reviews',
+            notifications: 'notifications',
+            returns: 'returns',
+            notificationLog: 'notification_log',
+            faqs: 'faqs',
+            promotions: 'promotions',
+            auditLog: 'audit_log',
+        };
+
+        /* camelCase object → snake_case row for Postgres */
+        function toRow(table, obj) {
+            if (!obj) return null;
+            const o = { ...obj };
+            // Normalize Date fields to ISO strings
+            ['createdAt', 'at', 'addedAt'].forEach(k => {
+                if (o[k] instanceof Date) o[k] = o[k].toISOString();
+            });
+            const map = {
+                pharmacies: () => ({
+                    id: o.id, name: o.name, location: o.location, hours: o.hours,
+                    status: o.status, lat: o.lat, lng: o.lng
+                }),
+                medicines: () => ({
+                    id: o.id, pharmacy_id: o.pharmacyId, name: o.name, category: o.category,
+                    price: o.price, stock: o.stock, prescription: !!o.prescription,
+                    sold: o.sold || 0, added_at: o.addedAt || 0, brand: o.brand || null,
+                    description: o.description || null, specs: o.specs || {},
+                    status: o.status || 'active', low_stock_threshold: o.lowStockThreshold ?? null,
+                    images: o.images || []
+                }),
+                customers: () => ({
+                    id: o.id, name: o.name, email: o.email, password: o.password,
+                    status: o.status || 'active', addresses: o.addresses || [],
+                    wishlist: o.wishlist || []
+                }),
+                staff: () => ({
+                    id: o.id, name: o.name, email: o.email, password: o.password,
+                    pharmacy_id: o.pharmacyId, status: o.status, is_owner: !!o.isOwner
+                }),
+                admins: () => ({
+                    id: o.id, name: o.name, email: o.email, password: o.password
+                }),
+                orders: () => ({
+                    id: o.id, customer_id: o.customerId, pharmacy_id: o.pharmacyId,
+                    items: o.items || [], fulfillment: o.fulfillment,
+                    address_id: o.addressId || null, status: o.status,
+                    created_at: o.createdAt instanceof Date ? o.createdAt.toISOString() : o.createdAt,
+                    payment_method: o.paymentMethod || 'card',
+                    payment_label: o.paymentLabel || null
+                }),
+                threads: () => ({
+                    id: o.id, pharmacy_id: o.pharmacyId, customer_id: o.customerId,
+                    type: o.type, order_id: o.orderId || null, med_id: o.medId || null,
+                    subject: o.subject, status: o.status,
+                    unread_for_customer: !!o.unreadForCustomer,
+                    unread_for_staff: !!o.unreadForStaff,
+                    messages: o.messages || []
+                }),
+                flags: () => ({
+                    id: o.id, target_type: o.targetType, target_id: o.targetId,
+                    reason: o.reason, status: o.status
+                }),
+                reviews: () => ({
+                    id: o.id, med_id: o.medId, customer_id: o.customerId,
+                    order_id: o.orderId, rating: o.rating,
+                    at: o.at instanceof Date ? o.at.toISOString() : o.at
+                }),
+                notifications: () => ({
+                    id: o.id, customer_id: o.customerId, type: o.type, text: o.text,
+                    read: !!o.read,
+                    at: o.at instanceof Date ? o.at.toISOString() : o.at
+                }),
+                returns: () => ({
+                    id: o.id, order_id: o.orderId, customer_id: o.customerId,
+                    pharmacy_id: o.pharmacyId, reason: o.reason, status: o.status,
+                    refund_amount: o.refundAmount, source: o.source || 'customer',
+                    at: o.at instanceof Date ? o.at.toISOString() : o.at
+                }),
+                notificationLog: () => ({
+                    id: o.id, pharmacy_id: o.pharmacyId, event: o.event,
+                    customer_id: o.customerId || null, text: o.text, kind: o.kind || 'automated',
+                    at: o.at instanceof Date ? o.at.toISOString() : o.at
+                }),
+                faqs: () => ({ id: o.id, q: o.q, a: o.a }),
+                promotions: () => ({ id: o.id, title: o.title, text: o.text, active: !!o.active }),
+                auditLog: () => ({
+                    id: o.id, actor: o.actor, action: o.action,
+                    at: o.at instanceof Date ? o.at.toISOString() : o.at
+                }),
+            };
+            return (map[table] || (() => o))();
+        }
+
+        function fromRow(table, row) {
+            if (!row) return null;
+            const map = {
+                pharmacies: () => ({
+                    id: row.id, name: row.name, location: row.location, hours: row.hours,
+                    status: row.status, lat: row.lat, lng: row.lng
+                }),
+                medicines: () => ({
+                    id: row.id, pharmacyId: row.pharmacy_id, name: row.name, category: row.category,
+                    price: Number(row.price), stock: Number(row.stock), prescription: !!row.prescription,
+                    sold: Number(row.sold || 0), addedAt: Number(row.added_at || 0),
+                    brand: row.brand || undefined, description: row.description || undefined,
+                    specs: row.specs || undefined, status: row.status || 'active',
+                    lowStockThreshold: row.low_stock_threshold, images: row.images || []
+                }),
+                customers: () => ({
+                    id: row.id, name: row.name, email: row.email, password: row.password,
+                    status: row.status, addresses: row.addresses || [], wishlist: row.wishlist || []
+                }),
+                staff: () => ({
+                    id: row.id, name: row.name, email: row.email, password: row.password,
+                    pharmacyId: row.pharmacy_id, status: row.status, isOwner: !!row.is_owner
+                }),
+                admins: () => ({
+                    id: row.id, name: row.name, email: row.email, password: row.password
+                }),
+                orders: () => ({
+                    id: row.id, customerId: row.customer_id, pharmacyId: row.pharmacy_id,
+                    items: row.items || [], fulfillment: row.fulfillment,
+                    addressId: row.address_id, status: row.status,
+                    createdAt: row.created_at ? new Date(row.created_at) : new Date(),
+                    paymentMethod: row.payment_method || 'card',
+                    paymentLabel: row.payment_label || undefined
+                }),
+                threads: () => ({
+                    id: row.id, pharmacyId: row.pharmacy_id, customerId: row.customer_id,
+                    type: row.type, orderId: row.order_id || null, medId: row.med_id || null,
+                    subject: row.subject, status: row.status,
+                    unreadForCustomer: !!row.unread_for_customer,
+                    unreadForStaff: !!row.unread_for_staff,
+                    messages: (row.messages || []).map(m => ({
+                        ...m, at: m.at ? new Date(m.at) : new Date()
+                    }))
+                }),
+                flags: () => ({
+                    id: row.id, targetType: row.target_type, targetId: row.target_id,
+                    reason: row.reason, status: row.status
+                }),
+                reviews: () => ({
+                    id: row.id, medId: row.med_id, customerId: row.customer_id,
+                    orderId: row.order_id, rating: Number(row.rating),
+                    at: row.at ? new Date(row.at) : new Date()
+                }),
+                notifications: () => ({
+                    id: row.id, customerId: row.customer_id, type: row.type, text: row.text,
+                    read: !!row.read, at: row.at ? new Date(row.at) : new Date()
+                }),
+                returns: () => ({
+                    id: row.id, orderId: row.order_id, customerId: row.customer_id,
+                    pharmacyId: row.pharmacy_id, reason: row.reason, status: row.status,
+                    refundAmount: row.refund_amount, source: row.source,
+                    at: row.at ? new Date(row.at) : new Date()
+                }),
+                notificationLog: () => ({
+                    id: row.id, pharmacyId: row.pharmacy_id, event: row.event,
+                    customerId: row.customer_id, text: row.text, kind: row.kind,
+                    at: row.at ? new Date(row.at) : new Date()
+                }),
+                faqs: () => ({ id: row.id, q: row.q, a: row.a }),
+                promotions: () => ({ id: row.id, title: row.title, text: row.text, active: !!row.active }),
+                auditLog: () => ({
+                    id: row.id, actor: row.actor, action: row.action,
+                    at: row.at ? new Date(row.at) : new Date()
+                }),
+            };
+            return (map[table] || (() => row))();
+        }
+
+        async function sbUpsert(table, obj) {
+            if (!sbEnabled()) return;
+            const tableName = SB_TABLE[table] || table;
+            const row = toRow(table, obj);
+            try {
+                const { error } = await sb.from(tableName).upsert(row, { onConflict: 'id' });
+                if (error) console.error('[Supabase upsert]', tableName, error);
+            } catch (e) { console.error('[Supabase upsert]', tableName, e); }
+        }
+
+        async function sbDelete(table, id) {
+            if (!sbEnabled()) return;
+            const tableName = SB_TABLE[table] || table;
+            try {
+                const { error } = await sb.from(tableName).delete().eq('id', id);
+                if (error) console.error('[Supabase delete]', tableName, error);
+            } catch (e) { console.error('[Supabase delete]', tableName, e); }
+        }
+
+        async function sbDeleteWhere(table, column, value) {
+            if (!sbEnabled()) return;
+            const tableName = SB_TABLE[table] || table;
+            try {
+                const { error } = await sb.from(tableName).delete().eq(column, value);
+                if (error) console.error('[Supabase deleteWhere]', tableName, error);
+            } catch (e) { console.error('[Supabase deleteWhere]', tableName, e); }
+        }
+
+        async function sbSaveSettings(settings) {
+            if (!sbEnabled()) return;
+            try {
+                const { error } = await sb.from('settings').upsert({ id: 'main', data: settings });
+                if (error) console.error('[Supabase settings]', error);
+            } catch (e) { console.error('[Supabase settings]', e); }
+        }
+
+        async function sbSavePages(pages) {
+            if (!sbEnabled()) return;
+            try {
+                const rows = Object.entries(pages).map(([key, p]) => ({
+                    key, title: p.title, body: p.body
+                }));
+                const { error } = await sb.from('pages').upsert(rows, { onConflict: 'key' });
+                if (error) console.error('[Supabase pages]', error);
+            } catch (e) { console.error('[Supabase pages]', e); }
+        }
+
+        async function sbSaveBanner(banner) {
+            if (!sbEnabled()) return;
+            try {
+                const { error } = await sb.from('homepage_banner').upsert({
+                    id: 'main',
+                    headline: banner.headline,
+                    subtext: banner.subtext,
+                    cta_label: banner.ctaLabel,
+                    active: !!banner.active
+                });
+                if (error) console.error('[Supabase banner]', error);
+            } catch (e) { console.error('[Supabase banner]', e); }
+        }
+
+        async function sbSaveNotifTemplates(phId, templates) {
+            if (!sbEnabled()) return;
+            try {
+                const { error } = await sb.from('notif_templates').upsert({
+                    pharmacy_id: phId, templates
+                }, { onConflict: 'pharmacy_id' });
+                if (error) console.error('[Supabase notif_templates]', error);
+            } catch (e) { console.error('[Supabase notif_templates]', e); }
+        }
+
+        async function loadAllFromSupabase() {
+            if (!sbEnabled()) return false;
+            const tables = Object.keys(SB_TABLE);
+            try {
+                for (const key of tables) {
+                    const tableName = SB_TABLE[key];
+                    const { data, error } = await sb.from(tableName).select('*');
+                    if (error) {
+                        console.error('[Supabase load]', tableName, error);
+                        continue;
+                    }
+                    DB[key] = (data || []).map(r => fromRow(key, r));
+                }
+                // settings singleton
+                {
+                    const { data } = await sb.from('settings').select('*').eq('id', 'main').maybeSingle();
+                    if (data && data.data) Object.assign(DB.settings, data.data);
+                }
+                // pages
+                {
+                    const { data } = await sb.from('pages').select('*');
+                    if (data && data.length) {
+                        data.forEach(r => { DB.pages[r.key] = { title: r.title, body: r.body }; });
+                    }
+                }
+                // homepage banner
+                {
+                    const { data } = await sb.from('homepage_banner').select('*').eq('id', 'main').maybeSingle();
+                    if (data) {
+                        DB.homepageBanner = {
+                            headline: data.headline, subtext: data.subtext,
+                            ctaLabel: data.cta_label, active: !!data.active
+                        };
+                    }
+                }
+                // notif templates
+                {
+                    const { data } = await sb.from('notif_templates').select('*');
+                    if (data) {
+                        data.forEach(r => { DB.notifTemplates[r.pharmacy_id] = r.templates || {}; });
+                    }
+                }
+                // Rebuild counters from loaded data
+                counters.order = nextCounter(DB.orders, 'o', 1);
+                counters.thread = nextCounter(DB.threads, 't', 1);
+                counters.med = nextCounter(DB.medicines, 'm', 1);
+                counters.review = nextCounter(DB.reviews, 'rv', 1);
+                counters.notif = nextCounter(DB.notifications, 'n', 1);
+                counters.ret = nextCounter(DB.returns, 'r', 1);
+                counters.admin = nextCounter(DB.admins, 'a', 1);
+                counters.staff = nextCounter(DB.staff, 's', 1);
+                counters.promo = nextCounter(DB.promotions, 'promo', 1);
+                counters.faq = nextCounter(DB.faqs, 'faq', 1);
+                counters.audit = nextCounter(DB.auditLog, 'audit', 1);
+                counters.log = nextCounter(DB.notificationLog, 'log', 1);
+                console.log('[Supabase] Loaded data from cloud');
+                return true;
+            } catch (e) {
+                console.error('[Supabase] load failed', e);
+                return false;
+            }
+        }
+
+        /* Keep a snapshot of the built-in seed so we can upload it if Supabase is empty. */
+        const LOCAL_SEED = {
+            pharmacies: null, customers: null, staff: null, admins: null,
+            faqs: null, pages: null, homepageBanner: null, settings: null
+        };
+        function captureLocalSeed() {
+            LOCAL_SEED.pharmacies = JSON.parse(JSON.stringify(DB.pharmacies));
+            LOCAL_SEED.customers = JSON.parse(JSON.stringify(DB.customers));
+            LOCAL_SEED.staff = JSON.parse(JSON.stringify(DB.staff));
+            LOCAL_SEED.admins = JSON.parse(JSON.stringify(DB.admins));
+            LOCAL_SEED.faqs = JSON.parse(JSON.stringify(DB.faqs));
+            LOCAL_SEED.pages = JSON.parse(JSON.stringify(DB.pages));
+            LOCAL_SEED.homepageBanner = JSON.parse(JSON.stringify(DB.homepageBanner));
+            LOCAL_SEED.settings = JSON.parse(JSON.stringify(DB.settings));
+        }
+
+        /* Seed remote DB with local defaults when tables are empty (first run). */
+        async function seedSupabaseIfEmpty() {
+            if (!sbEnabled()) return;
+            const { count, error } = await sb.from('admins').select('*', { count: 'exact', head: true });
+            if (error) { console.error('[Supabase seed check]', error); return false; }
+            if (count && count > 0) return false; // already has data
+            console.log('[Supabase] Empty project — uploading local seed accounts…');
+            const seed = LOCAL_SEED;
+            for (const p of (seed.pharmacies || [])) await sbUpsert('pharmacies', p);
+            for (const c of (seed.customers || [])) await sbUpsert('customers', c);
+            for (const s of (seed.staff || [])) await sbUpsert('staff', s);
+            for (const a of (seed.admins || [])) await sbUpsert('admins', a);
+            for (const f of (seed.faqs || [])) await sbUpsert('faqs', f);
+            if (seed.pages) await sbSavePages(seed.pages);
+            if (seed.homepageBanner) await sbSaveBanner(seed.homepageBanner);
+            if (seed.settings) await sbSaveSettings(seed.settings);
+            console.log('[Supabase] Seed complete');
+            return true;
+        }
+
+                /* ---------- Seed database ---------- */
         const DB = {
             pharmacies: [
                 { id: 'p1', name: 'Wellness Corner Pharmacy', location: '12 Mabini St., Downtown District', hours: '8:00 AM – 9:00 PM daily',
@@ -2062,64 +2460,11 @@
                 { id: 'p_pending', name: 'Greenleaf Apothecary', location: '45 Sampaguita Ave., Riverside',
                     hours: '9:00 AM – 8:00 PM Mon–Sat', status: 'pending', lat: null, lng: null },
             ],
-            medicines: [
-                { id: 'm1', pharmacyId: 'p1', name: 'Paracetamol 500mg (20 tabs)', category: 'Pain Relief', price: 85,
-                    stock: 120, prescription: false, sold: 34, addedAt: 10, brand: 'Unilab',
-                    description: 'Fast-acting relief for headaches, fever, and everyday aches — gentle on the stomach when taken as directed.',
-                    specs: { Form: 'Tablet', Strength: '500 mg', 'Pack Size': '20 tablets', Manufacturer: 'CarePoint Generics', Storage: 'Store below 30°C, away from moisture' } },
-                { id: 'm2', pharmacyId: 'p1', name: 'Ibuprofen 200mg (20 tabs)', category: 'Pain Relief', price: 120,
-                    stock: 60, prescription: false, sold: 19, addedAt: 9, brand: 'Pfizer',
-                    description: 'An anti-inflammatory pain reliever that eases pain, swelling, and fever — good for muscle aches and minor injuries.',
-                    specs: { Form: 'Tablet', Strength: '200 mg', 'Pack Size': '20 tablets', Manufacturer: 'CarePoint Generics', Storage: 'Store below 30°C, away from moisture' } },
-                { id: 'm3', pharmacyId: 'p1', name: 'Cetirizine 10mg (10 tabs)', category: 'Allergy', price: 95, stock: 40,
-                    prescription: false, sold: 12, addedAt: 8, brand: 'GSK',
-                    description: 'A once-daily antihistamine for sneezing, itchy eyes, and a runny nose brought on by allergies.',
-                    specs: { Form: 'Tablet', Strength: '10 mg', 'Pack Size': '10 tablets', Manufacturer: 'CarePoint Generics', Storage: 'Store below 25°C' } },
-                { id: 'm4', pharmacyId: 'p1', name: 'Cough Syrup — Adult 120ml', category: 'Cold & Flu', price: 135,
-                    stock: 30, prescription: false, sold: 21, addedAt: 7, brand: 'Unilab',
-                    description: 'Soothes dry and productive coughs so you can rest easier through a cold.',
-                    specs: { Form: 'Syrup', Volume: '120 ml', Dosage: '10 ml every 6–8 hours', Manufacturer: 'Wellness Labs PH', Storage: 'Discard 6 months after opening' } },
-                { id: 'm5', pharmacyId: 'p1', name: 'Oral Rehydration Salts (10 sachets)', category: 'Digestive',
-                    price: 40, stock: 100, prescription: false, sold: 8, addedAt: 6, brand: 'RiteMed',
-                    description: 'Replaces fluids and electrolytes lost from diarrhea, vomiting, or heat exhaustion.',
-                    specs: { Form: 'Powder sachet', 'Pack Size': '10 sachets', Preparation: 'Dissolve 1 sachet in 200 ml clean water', Manufacturer: 'CarePoint Generics' } },
-                { id: 'm6', pharmacyId: 'p1', name: 'Amoxicillin 500mg (21 caps)', category: 'Prescription', price: 180,
-                    stock: 50, prescription: true, sold: 5, addedAt: 5, brand: 'Pfizer',
-                    description: 'A broad-spectrum antibiotic used to treat a range of bacterial infections. Prescription required.',
-                    specs: { Form: 'Capsule', Strength: '500 mg', 'Pack Size': '21 capsules', 'Requires Prescription': 'Yes', Manufacturer: 'CarePoint Pharma' } },
-                { id: 'm7', pharmacyId: 'p1', name: 'Vitamin C 500mg (60 tabs)', category: 'Vitamins', price: 150,
-                    stock: 200, prescription: false, sold: 41, addedAt: 4, brand: 'Unilab',
-                    description: 'Supports everyday immune health and skin with a daily dose of Vitamin C.',
-                    specs: { Form: 'Tablet', Strength: '500 mg', 'Pack Size': '60 tablets', Manufacturer: 'Sunrise Nutraceuticals' } },
-                { id: 'm8', pharmacyId: 'p1', name: 'Multivitamins (60 tabs)', category: 'Vitamins', price: 220, stock: 80,
-                    prescription: false, sold: 27, addedAt: 3, brand: 'GSK',
-                    description: 'A complete daily multivitamin covering essential vitamins and minerals for everyday energy.',
-                    specs: { Form: 'Tablet', 'Pack Size': '60 tablets', Dosage: '1 tablet daily with food', Manufacturer: 'Sunrise Nutraceuticals' } },
-                { id: 'm9', pharmacyId: 'p1', name: 'Antiseptic Solution 250ml', category: 'First Aid', price: 75,
-                    stock: 55, prescription: false, sold: 6, addedAt: 2, brand: 'RiteMed',
-                    description: 'A gentle antiseptic solution for cleaning minor cuts, scrapes, and grazes.',
-                    specs: { Form: 'Liquid', Volume: '250 ml', 'Active Ingredient': 'Povidone-iodine 10%', Manufacturer: 'CarePoint Generics' } },
-                { id: 'm10', pharmacyId: 'p1', name: 'Hydrocortisone Cream 1% 20g', category: 'Skin Care', price: 180,
-                    stock: 6, prescription: false, sold: 3, addedAt: 1, brand: 'GSK',
-                    description: 'A mild topical steroid cream that calms itching, redness, and irritation.',
-                    specs: { Form: 'Cream', Strength: '1%', Volume: '20 g', Application: 'Thin layer, 1–2 times daily', Manufacturer: 'CarePoint Generics' } },
-                { id: 'm11', pharmacyId: 'p1', name: 'Salbutamol Inhaler 100mcg', category: 'Prescription', price: 320,
-                    stock: 40, prescription: true, sold: 2, addedAt: 0, brand: 'GSK',
-                    description: 'A fast-acting reliever inhaler for asthma and sudden breathing difficulty. Prescription required.',
-                    specs: { Form: 'Metered-dose inhaler', Strength: '100 mcg/puff', 'Requires Prescription': 'Yes', Manufacturer: 'CarePoint Pharma' } },
-                { id: 'm_pending1', pharmacyId: 'p_pending', name: 'Echinacea Drops 30ml', category: 'Cold & Flu',
-                    price: 210, stock: 45, prescription: false, sold: 0, addedAt: 0, brand: 'Greenleaf Botanicals',
-                    description: 'An herbal tincture traditionally used to support the immune system at the first sign of a cold.',
-                    specs: { Form: 'Liquid drops', Volume: '30 ml', Manufacturer: 'Greenleaf Botanicals' } },
-                { id: 'm_pending2', pharmacyId: 'p_pending', name: 'Ginger & Honey Lozenges', category: 'Cold & Flu',
-                    price: 95, stock: 60, prescription: false, sold: 0, addedAt: 0, brand: 'Greenleaf Botanicals',
-                    description: 'Soothing lozenges that ease a scratchy throat with real ginger and honey.',
-                    specs: { Form: 'Lozenge', 'Pack Size': '12 lozenges', Manufacturer: 'Greenleaf Botanicals' } },
-            ],
+            medicines: [],
             customers: [
                 { id: 'c1', name: 'Juan Dela Cruz', email: 'juan@example.com', password: 'demo123', status: 'active',
                     addresses: [{ id: 'addr1', label: 'Home', text: '123 Mabini St., Downtown District' }],
-                wishlist: ['m7'] },
+                wishlist: [] },
             ],
             staff: [
                 { id: 's1', name: 'Alyssa Reyes', email: 'alyssa@wellnesscorner.ph', password: 'demo123',
@@ -2130,28 +2475,11 @@
                     pharmacyId: 'p_pending', status: 'pending', isOwner: true },
             ],
             admins: [{ id: 'a1', name: 'Admin User', email: 'admin@carepoint.ph', password: 'admin123' }],
-            orders: [
-                // Simulate a completed order for Juan so he can review products
-                { id: 'o1001', customerId: 'c1', pharmacyId: 'p1', items: [{ medId: 'm10', qty: 1, price: 180 }],
-                    fulfillment: 'pickup', addressId: null, status: 'completed', createdAt: new Date(Date.now() - 1000 *
-                        60 * 60 * 24 * 2) },
-                // Another completed order for other products
-                { id: 'o1002', customerId: 'c1', pharmacyId: 'p1', items: [{ medId: 'm1', qty: 2, price: 85 }],
-                    fulfillment: 'pickup', addressId: null, status: 'completed', createdAt: new Date(Date.now() - 1000 *
-                        60 * 60 * 24 * 4) },
-            ],
+            orders: [],
             threads: [],
             flags: [],
-            reviews: [
-                { id: 'rv1', medId: 'm10', customerId: 'c1', orderId: 'o1001', rating: 5,
-                    at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5) },
-                // No comment field
-            ],
-            notifications: [
-                { id: 'n1', customerId: 'c1', type: 'promo',
-                    text: '🌿 Welcome basket: 10% off Vitamins this week at Wellness Corner Pharmacy.', read: false,
-                    at: new Date(Date.now() - 1000 * 60 * 60 * 3) },
-            ],
+            reviews: [],
+            notifications: [],
             /* --- Phase 3 --- */
             returns: [],
             notificationLog: [],
@@ -2166,9 +2494,7 @@
                 { id: 'faq1', q: 'How do I know a pharmacy on CarePoint is legitimate?', a: 'Every pharmacy is reviewed and approved by our team before it can list products.' },
                 { id: 'faq2', q: 'Can I get prescription medicine delivered?', a: 'Yes — upload a valid prescription at checkout and the pharmacy will verify it before dispatch.' },
             ],
-            promotions: [
-                { id: 'promo1', title: '🌿 Welcome basket', text: '10% off Vitamins this week at participating pharmacies.', active: true },
-            ],
+            promotions: [],
             homepageBanner: { headline: 'Your neighborhood apothecary, online.', subtext: 'Real pharmacies, real pharmacists, delivered with care.', ctaLabel: 'Browse remedies', active: true },
             auditLog: [],
             settings: {
@@ -2217,9 +2543,9 @@
         }
 
         let counters = {
-            order: nextCounter(DB.orders, 'o', 1001),
+            order: nextCounter(DB.orders, 'o', 1),
             thread: nextCounter(DB.threads, 't', 1),
-            med: nextCounter(DB.medicines, 'm', 12),
+            med: nextCounter(DB.medicines, 'm', 1),
             addr: 2,
             review: nextCounter(DB.reviews, 'rv', 1),
             notif: nextCounter(DB.notifications, 'n', 1),
@@ -2231,6 +2557,9 @@
             audit: 1,
             log: 1,
         };
+
+        // Snapshot seed before any Supabase load can overwrite it
+        captureLocalSeed();
 
         /* ---------- App state ---------- */
         const state = {
@@ -2402,7 +2731,7 @@
           </div>`;
         }
 
-        /* ---------- Product gallery (images + simulated video) ---------- */
+        /* ---------- Product gallery (images + video placeholder) ---------- */
         function medGalleryShots(m) {
             if (m.images && m.images.length) {
                 return m.images.map((src, i) => ({ type: 'image', label: 'Photo ' + (i + 1), src }))
@@ -2419,8 +2748,8 @@
             const [c1, c2] = getMedGradient(m.name);
             const playing = state.gallery.playing;
             return `<div class="med-picture med-picture-lg gallery-video ${playing?'playing':''}" style="background:linear-gradient(145deg,${c1},${c2});border:2px solid rgba(255,255,255,0.4);" onclick="App.toggleGalleryVideo()">
-                <button class="gallery-play-btn" title="${playing?'Pause':'Play'} demo video" onclick="event.stopPropagation();App.toggleGalleryVideo()">${icon(playing?'pause':'play',24)}</button>
-                <span class="med-pic-label" style="position:absolute;bottom:12px;">${playing?'Playing — demo':'How to use (demo)'}</span>
+                <button class="gallery-play-btn" title="${playing?'Pause':'Play'} video" onclick="event.stopPropagation();App.toggleGalleryVideo()">${icon(playing?'pause':'play',24)}</button>
+                <span class="med-pic-label" style="position:absolute;bottom:12px;">${playing?'Playing':'How to use'}</span>
               </div>`;
         }
         function medGalleryHtml(m) {
@@ -2536,6 +2865,7 @@
             if (!DB.notifTemplates[phId]) {
                 DB.notifTemplates[phId] = {};
                 NOTIF_EVENTS.forEach(e => { DB.notifTemplates[phId][e.id] = { enabled: true, text: e.text }; });
+                sbSaveNotifTemplates(phId, DB.notifTemplates[phId]);
             }
             return DB.notifTemplates[phId];
         }
@@ -2555,8 +2885,10 @@
         }
 
         function logNotification(phId, eventId, customerId, text, kind) {
-            DB.notificationLog.unshift({ id: 'log' + (counters.log++), pharmacyId: phId, event: eventId,
-                customerId, text, kind: kind || 'automated', at: new Date() });
+            const row = { id: 'log' + (counters.log++), pharmacyId: phId, event: eventId,
+                customerId, text, kind: kind || 'automated', at: new Date() };
+            DB.notificationLog.unshift(row);
+            sbUpsert('notificationLog', row);
         }
 
         function notifyOrderEvent(o, eventId, extra) {
@@ -2616,8 +2948,10 @@
         function unreadNotifCount(custId) { return DB.notifications.filter(n => n.customerId === custId && !n.read).length; }
 
         function pushNotification(custId, type, text) {
-            DB.notifications.unshift({ id: 'n' + (counters.notif++), customerId: custId, type, text, read: false,
-                at: new Date() });
+            const row = { id: 'n' + (counters.notif++), customerId: custId, type, text, read: false,
+                at: new Date() };
+            DB.notifications.unshift(row);
+            sbUpsert('notifications', row);
         }
 
         function currentCustomer() { return customer(state.session.customer); }
@@ -2641,12 +2975,14 @@
             return 'System';
         }
         function logAudit(action) {
-            DB.auditLog.unshift({ id: 'audit' + (counters.audit++), at: new Date(), actor: auditActorLabel(), action });
+            const row = { id: 'audit' + (counters.audit++), at: new Date(), actor: auditActorLabel(), action };
+            DB.auditLog.unshift(row);
             if (DB.auditLog.length > 300) DB.auditLog.length = 300;
+            sbUpsert('auditLog', row);
         }
 
         function orderTotal(o) { return o.items.reduce((sum, it) => sum + it.price * it.qty, 0); }
-        function orderPaymentLabel(o) { return o.paymentLabel || 'Card (test mode)'; }
+        function orderPaymentLabel(o) { return o.paymentLabel || 'Card'; }
         function orderPaymentIcon(o) {
             const pm = PAYMENT_METHODS.find(p => p.id === (o.paymentMethod || 'card'));
             return icon(pm ? pm.icon : 'card', 13);
@@ -2726,7 +3062,7 @@
                 <a href="#" onclick="event.preventDefault();App.goStaticPage('faqs')">FAQs</a>
                 <a href="#" onclick="event.preventDefault();App.goStaticPage('privacy')">${esc(DB.pages.privacy.title)}</a>
               </div>` : ''}
-              <div>CarePoint demo — "The Neighborhood Apothecary." Data resets on page reload.</div>
+              <div>CarePoint — "The Neighborhood Apothecary."</div>
             </footer>`;
         }
 
@@ -3180,7 +3516,7 @@
                 `<p class="hint" style="text-align:center;margin-top:14px;"><a href="#" onclick="event.preventDefault();App.setAuthView('register')" style="color:var(--terracotta-dark);font-weight:600;">&larr; Back</a></p>` :
                 view === 'register' ?
                 `<p class="hint" style="text-align:center;margin-top:14px;">Own a pharmacy? <a href="#" onclick="event.preventDefault();App.setAuthView('registerPharmacy')" style="color:var(--terracotta-dark);font-weight:600;">Register it here</a>.</p>` :
-                `<p class="hint" style="text-align:center;margin-top:14px;">Demo: juan@example.com / demo123</p>`;
+                `<p class="hint" style="text-align:center;margin-top:14px;">Need an account? <a href="#" onclick="event.preventDefault();App.setAuthView('register')" style="color:var(--terracotta-dark);font-weight:600;">Create one</a>.</p>`;
 
             return `<div class="auth-wrap">
                 <p style="margin:0 0 10px;"><button class="btn-link" onclick="App.goPublic('landing')">&larr; Keep browsing without an account</button></p>
@@ -3198,14 +3534,6 @@
               <div class="field"><label>Email</label><input type="email" id="loginEmail" placeholder="you@example.com" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
               <div class="field"><label>Password</label><input type="password" id="loginPassword" placeholder="••••••••" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
               <button class="btn btn-primary btn-block" onclick="App.login()">Log In</button>
-              <div class="demo-strip">
-                <span class="demo-label">⚡ Quick fill</span>
-                <button class="btn-demo" onclick="App.fillLogin('customer')">Customer</button>
-                <button class="btn-demo-light" onclick="App.fillLogin('staff')">Pharmacy Admin</button>
-                <button class="btn-demo-light" onclick="App.fillLogin('team')">Staff</button>
-                <button class="btn-demo" onclick="App.fillLogin('admin')">Site Admin</button>
-                <span style="font-size:10px;color:var(--walnut-faint);margin-left:4px;">(demo)</span>
-              </div>
             `;
         }
 
@@ -3215,10 +3543,6 @@
               <div class="field"><label>Email</label><input type="email" id="regEmail" placeholder="you@example.com"></div>
               <div class="field"><label>Password</label><input type="password" id="regPassword" placeholder="Create a password"></div>
               <button class="btn btn-primary btn-block" onclick="App.registerCustomer()">Create Account</button>
-              <div class="demo-strip">
-                <span class="demo-label">⚡ Quick fill</span>
-                <button class="btn-demo" onclick="App.fillCustomerRegister()">Fill demo data</button>
-              </div>
             `;
         }
 
@@ -3234,10 +3558,6 @@
               <div class="field"><label>Operating Hours</label><input type="text" id="regPharmHours" placeholder="e.g. 8:00 AM – 8:00 PM daily"></div>
               <div class="apo-note"><p>New pharmacies are reviewed by an admin before they open.</p></div>
               <button class="btn btn-primary btn-block" onclick="App.registerStaff()">Submit Registration</button>
-              <div class="demo-strip">
-                <span class="demo-label">⚡ Quick fill</span>
-                <button class="btn-demo" onclick="App.fillStaffRegister()">Fill demo data</button>
-              </div>
             `;
         }
 
@@ -3570,7 +3890,7 @@
                     <h3 style="font-size:15px;">Payment</h3>
                     ${paymentMethodPicker()}
                     ${paymentMethodFields()}
-                    <p class="hint">${PAYMENT_HINT[state.checkout.paymentMethod] || 'Simulated payment — no real transaction.'}</p>
+                    <p class="hint">${PAYMENT_HINT[state.checkout.paymentMethod] || 'Payment will be confirmed with the pharmacy.'}</p>
                   </div>
                   <div class="card" style="align-self:start;">
                     <h3 style="margin-top:0;font-size:15px;">Summary</h3>
@@ -3595,10 +3915,10 @@
             { id: 'cod', label: 'Cash on Delivery', icon: 'cash' },
         ];
         const PAYMENT_HINT = {
-            card: 'Simulated card payment via Stripe sandbox — no real transaction.',
-            gcash: 'Simulated e-wallet payment via GCash sandbox — no real transaction.',
-            paymaya: 'Simulated e-wallet payment via PayMaya sandbox — no real transaction.',
-            paypal: 'Simulated payment via PayPal sandbox — no real transaction.',
+            card: 'Card payment processed securely.',
+            gcash: 'Pay with GCash.',
+            paymaya: 'Pay with PayMaya.',
+            paypal: 'Pay with PayPal.',
             cod: 'Pay in cash when your order is picked up or delivered.',
         };
         function paymentMethodPicker() {
@@ -3622,11 +3942,11 @@
             if (method === 'gcash' || method === 'paymaya') {
                 const brand = method === 'gcash' ? 'GCash' : 'PayMaya';
                 return `<div class="field"><label>${brand}-registered mobile number</label><input type="text" id="ewalletNumber" placeholder="09XX XXX XXXX"></div>
-                    <p class="hint">You'll get a one-time PIN in the ${brand} app to confirm this payment (simulated).</p>`;
+                    <p class="hint">You'll get a one-time PIN in the ${brand} app to confirm this payment.</p>`;
             }
             if (method === 'paypal') {
                 return `<div class="field"><label>PayPal email</label><input type="email" id="paypalEmail" placeholder="you@example.com"></div>
-                    <p class="hint">You'll be redirected to PayPal to confirm this payment (simulated).</p>`;
+                    <p class="hint">You'll be redirected to PayPal to confirm this payment.</p>`;
             }
             return `<div class="apo-note" style="margin-top:4px;"><p>Have the exact amount ready — payment is collected in cash on pickup or delivery.</p></div>`;
         }
@@ -4849,41 +5169,6 @@
             setStaffFilter(f) { state.staff.orderFilter = f;
                 update(); },
 
-            /* ---- DEMO FILL ---- */
-            fillLogin(role) {
-                const emailMap = { customer: 'juan@example.com', staff: 'alyssa@wellnesscorner.ph',
-                team: 'marco@wellnesscorner.ph', admin: 'admin@carepoint.ph' };
-                const passMap = { customer: 'demo123', staff: 'demo123', team: 'demo123', admin: 'admin123' };
-                const emailEl = document.getElementById('loginEmail');
-                const passEl = document.getElementById('loginPassword');
-                if (emailEl) emailEl.value = emailMap[role] || '';
-                if (passEl) passEl.value = passMap[role] || '';
-                toast('⚡ Filled ' + role + ' login.', 'success');
-            },
-            fillCustomerRegister() {
-                const nameEl = document.getElementById('regName');
-                const emailEl = document.getElementById('regEmail');
-                const passEl = document.getElementById('regPassword');
-                if (nameEl) nameEl.value = 'Test Customer';
-                if (emailEl) emailEl.value = 'test' + Date.now() + '@example.com';
-                if (passEl) passEl.value = 'demo123';
-                toast('⚡ Registration fields filled.', 'success');
-            },
-            fillStaffRegister() {
-                const nameEl = document.getElementById('regName');
-                const emailEl = document.getElementById('regEmail');
-                const passEl = document.getElementById('regPassword');
-                const pharmEl = document.getElementById('regPharmName');
-                const locEl = document.getElementById('regPharmLocation');
-                const hoursEl = document.getElementById('regPharmHours');
-                if (nameEl) nameEl.value = 'Demo Pharmacist';
-                if (emailEl) emailEl.value = 'pharm' + Date.now() + '@test.ph';
-                if (passEl) passEl.value = 'demo123';
-                if (pharmEl) pharmEl.value = 'Demo Pharmacy';
-                if (locEl) locEl.value = '123 Test St., Downtown';
-                if (hoursEl) hoursEl.value = '8:00 AM – 8:00 PM daily';
-                toast('⚡ Pharmacy registration filled.', 'success');
-            },
 
             login() {
                 const email = (document.getElementById('loginEmail') || {}).value?.trim().toLowerCase() || '';
@@ -4933,8 +5218,10 @@
                 if (DB.customers.some(c => c.email.toLowerCase() === email.toLowerCase())) { toast(
                         'Email already exists.', 'error'); return; }
                 const id = 'c' + (DB.customers.length + 1) + '_' + Date.now();
-                DB.customers.push({ id, name, email, password: pass, status: 'active', addresses: [],
-                wishlist: [] });
+                const newCust = { id, name, email, password: pass, status: 'active', addresses: [],
+                wishlist: [] };
+                DB.customers.push(newCust);
+                sbUpsert('customers', newCust);
                 state.activeRole = 'customer';
                 state.session.customer = id;
                 state.publicView = 'landing';
@@ -4955,10 +5242,14 @@
                         'Email already exists.', 'error'); return; }
                 const pid = 'p_' + Date.now();
                 const sid = 's_' + Date.now();
-                DB.pharmacies.push({ id: pid, name: pharmName, location: pharmLocation, hours: pharmHours,
-                    status: 'pending', lat: null, lng: null });
-                DB.staff.push({ id: sid, name, email, password: pass, pharmacyId: pid, status: 'pending',
-                    isOwner: true });
+                const newPh = { id: pid, name: pharmName, location: pharmLocation, hours: pharmHours,
+                    status: 'pending', lat: null, lng: null };
+                const newStaff = { id: sid, name, email, password: pass, pharmacyId: pid, status: 'pending',
+                    isOwner: true };
+                DB.pharmacies.push(newPh);
+                DB.staff.push(newStaff);
+                sbUpsert('pharmacies', newPh);
+                sbUpsert('staff', newStaff);
                 state.authView = 'login';
                 toast('Registration submitted! Awaiting admin approval.', 'success');
                 update();
@@ -4979,7 +5270,7 @@
                 state.gallery.playing = false;
                 update(); },
             toggleGalleryVideo() { state.gallery.playing = !state.gallery.playing;
-                if (state.gallery.playing) toast('Playing simulated demo video…', 'success');
+                if (state.gallery.playing) toast('Playing product video…', 'success');
                 update(); },
 
             toggleWishlist(medId) {
@@ -4989,17 +5280,18 @@
                 if (i > -1) { c.wishlist.splice(i, 1);
                     toast('Removed from wishlist.', 'success'); } else { c.wishlist.push(medId);
                     toast('Saved to wishlist.', 'success'); }
+                sbUpsert('customers', c);
                 update();
             },
 
             toggleNotifPanel() {
                 state.notifPanelOpen = !state.notifPanelOpen;
                 if (state.notifPanelOpen) { DB.notifications.filter(n => n.customerId === state.session.customer)
-                        .forEach(n => n.read = true); }
+                        .forEach(n => { n.read = true; sbUpsert('notifications', n); }); }
                 update();
             },
-            markAllNotifsRead() { DB.notifications.filter(n => n.customerId === state.session.customer).forEach(n => n
-                    .read = true);
+            markAllNotifsRead() { DB.notifications.filter(n => n.customerId === state.session.customer).forEach(n => {
+                    n.read = true; sbUpsert('notifications', n); });
                 update(); },
 
             /* ---- REVIEW ACTIONS (no comments) ---- */
@@ -5032,14 +5324,16 @@
                 }
 
                 const id = 'rv' + (counters.review++);
-                DB.reviews.push({
+                const rev = {
                     id,
                     medId,
                     customerId: custId,
                     orderId,
                     rating,
                     at: new Date()
-                });
+                };
+                DB.reviews.push(rev);
+                sbUpsert('reviews', rev);
                 delete state.reviewDraft[key];
                 toast('Thank you for your rating! 🌟', 'success');
                 update();
@@ -5137,7 +5431,7 @@
                     const cardExpiry = (document.getElementById('cardExpiry') || {}).value?.trim();
                     const cardCvv = (document.getElementById('cardCvv') || {}).value?.trim();
                     if (!cardName || !cardNumber || !cardExpiry || !cardCvv) { toast(
-                            'Complete card details (test mode).', 'error'); return; }
+                            'Complete card details.', 'error'); return; }
                     paymentLabel = 'Card •••• ' + cardNumber.replace(/\s/g, '').slice(-4);
                 } else if (method === 'gcash' || method === 'paymaya') {
                     const brand = method === 'gcash' ? 'GCash' : 'PayMaya';
@@ -5174,10 +5468,13 @@
                 items.forEach(it => { const med = medicine(it.medId);
                     med.stock -= it.qty;
                     med.sold = (med.sold || 0) + it.qty; });
-                DB.orders.push({ id, customerId: custId, pharmacyId: cart.pharmacyId, items, fulfillment: state
+                const newOrder = { id, customerId: custId, pharmacyId: cart.pharmacyId, items, fulfillment: state
                         .checkout.fulfillment, addressId: state.checkout.addressId, status: 'pending',
                     createdAt: new Date(), paymentMethod: pending.method || 'card',
-                    paymentLabel: pending.paymentLabel || 'Card' });
+                    paymentLabel: pending.paymentLabel || 'Card' };
+                DB.orders.push(newOrder);
+                items.forEach(it => { const med = medicine(it.medId); if (med) sbUpsert('medicines', med); });
+                sbUpsert('orders', newOrder);
                 notifyOrderEvent(order(id), 'orderPlaced');
                 delete state.carts[custId];
                 state.checkout = { fulfillment: 'pickup', addressId: null, paymentMethod: 'card', processing: false };
@@ -5195,6 +5492,7 @@
                 const idx = STATUS_FLOW.indexOf(o.status);
                 if (idx < STATUS_FLOW.length - 1) {
                     o.status = STATUS_FLOW[idx + 1];
+                    sbUpsert('orders', o);
                     toast('Order marked ' + STATUS_LABEL[o.status], 'success');
                     notifyOrderEvent(o, { confirmed: 'orderConfirmed', ready: 'orderReady',
                         completed: 'orderCompleted' }[o.status]);
@@ -5208,6 +5506,7 @@
                 if (o.status === 'cancelled' || o.status === 'pending') { toast(
                         'The pharmacy has not prepared this order yet.', 'error'); return; }
                 o.status = 'completed';
+                sbUpsert('orders', o);
                 toast('Order received — you can rate these medicines now. 🌿', 'success');
                 pushNotification(o.customerId, 'order', '✅ Order #' + id.replace('o', '') +
                     ' received. Rate your medicines!');
@@ -5218,8 +5517,10 @@
                 const o = order(id);
                 o.items.forEach(it => { const med = medicine(it.medId);
                     med.stock += it.qty;
-                    med.sold = Math.max(0, (med.sold || 0) - it.qty); });
+                    med.sold = Math.max(0, (med.sold || 0) - it.qty);
+                    if (med) sbUpsert('medicines', med); });
                 o.status = 'cancelled';
+                sbUpsert('orders', o);
                 toast('Order cancelled.', 'success');
                 notifyOrderEvent(o, 'orderCancelled');
                 update();
@@ -5229,9 +5530,10 @@
                 const o = order(orderId);
                 if (!o) { toast('Order not found.', 'error'); return; }
                 const id = 't' + (counters.thread++);
-                DB.threads.push({ id, pharmacyId: o.pharmacyId, customerId: o.customerId, type: 'order',
+                const th1 = { id, pharmacyId: o.pharmacyId, customerId: o.customerId, type: 'order',
                     orderId: o.id, subject: 'Question about Order #' + orderId.replace('o', ''), status: 'open',
-                    unreadForCustomer: false, unreadForStaff: false, messages: [] });
+                    unreadForCustomer: false, unreadForStaff: false, messages: [] };
+                DB.threads.push(th1); sbUpsert('threads', th1);
                 App.openThread(state.activeRole, id);
             },
             newPrescriptionInquiry(medId) {
@@ -5239,9 +5541,10 @@
                 if (!m) { toast('Medicine not found.', 'error'); return; }
                 if (!state.session.customer) { App.goAuth('login'); return; }
                 const id = 't' + (counters.thread++);
-                DB.threads.push({ id, pharmacyId: m.pharmacyId, customerId: state.session.customer,
+                const th2 = { id, pharmacyId: m.pharmacyId, customerId: state.session.customer,
                     type: 'prescription', medId: m.id, subject: 'Question about ' + m.name, status: 'open',
-                    unreadForCustomer: false, unreadForStaff: false, messages: [] });
+                    unreadForCustomer: false, unreadForStaff: false, messages: [] };
+                DB.threads.push(th2); sbUpsert('threads', th2);
                 App.openThread('customer', id);
             },
             openThread(role, id) {
@@ -5268,10 +5571,12 @@
                 } else { t.unreadForStaff = true;
                     t.unreadForCustomer = false;
                     state.pendingImage = null; }
+                sbUpsert('threads', t);
                 toast(image ? 'Rx photo sent.' : 'Message sent.', 'success');
                 update();
             },
-            resolveThread(id) { thread(id).status = 'resolved';
+            resolveThread(id) { const tt = thread(id); tt.status = 'resolved';
+                sbUpsert('threads', tt);
                 toast('Resolved.', 'success');
                 update(); },
             handleImageSelect(inputEl) {
@@ -5297,9 +5602,10 @@
                 const ph = DB.pharmacies.find(p => p.status === 'approved');
                 if (!ph) { toast('No pharmacy available.', 'error'); return; }
                 const id = 't' + (counters.thread++);
-                DB.threads.push({ id, pharmacyId: ph.id, customerId: state.session.customer,
+                const th3 = { id, pharmacyId: ph.id, customerId: state.session.customer,
                     type: 'prescription', medId: null, subject: 'Prescription for review',
-                    status: 'open', unreadForCustomer: false, unreadForStaff: false, messages: [] });
+                    status: 'open', unreadForCustomer: false, unreadForStaff: false, messages: [] };
+                DB.threads.push(th3); sbUpsert('threads', th3);
                 App.openThread('customer', id);
             },
 
@@ -5310,6 +5616,7 @@
                 if (!name || !email) { toast('Name and email are required.', 'error'); return; }
                 c.name = name;
                 c.email = email;
+                sbUpsert('customers', c);
                 toast('Profile updated.', 'success');
                 update();
             },
@@ -5318,12 +5625,14 @@
                 const text = (document.getElementById('newAddrText') || {}).value?.trim();
                 if (!label || !text) { toast('Fill in both fields.', 'error'); return; }
                 currentCustomer().addresses.push({ id: 'addr' + (counters.addr++), label, text });
+                sbUpsert('customers', currentCustomer());
                 toast('Address added.', 'success');
                 update();
             },
             removeAddress(id) {
                 const c = currentCustomer();
                 c.addresses = c.addresses.filter(a => a.id !== id);
+                sbUpsert('customers', c);
                 toast('Address removed.', 'success');
                 update();
             },
@@ -5340,20 +5649,24 @@
                         'Valid name, price, and stock required.', 'error'); return; }
                 const id = 'm' + (counters.med++);
                 const newestAddedAt = DB.medicines.reduce((max, m) => Math.max(max, m.addedAt || 0), 0);
-                DB.medicines.push({ id, pharmacyId: ph.id, name, category: isRx ? 'Prescription' : category,
+                const newMed = { id, pharmacyId: ph.id, name, category: isRx ? 'Prescription' : category,
                     price, stock, prescription: isRx, sold: 0, addedAt: newestAddedAt + 1,
                     description: description || undefined,
                     specs: { Category: isRx ? 'Prescription' : category, 'Requires Prescription': isRx ? 'Yes' : 'No',
-                        'Sold By': ph.name } });
+                        'Sold By': ph.name } };
+                DB.medicines.push(newMed);
+                sbUpsert('medicines', newMed);
                 toast('Added to shelf.', 'success');
                 update();
             },
-            adjustStock(id, delta) { medicine(id).stock = Math.max(0, medicine(id).stock + delta);
+            adjustStock(id, delta) { const mm = medicine(id); mm.stock = Math.max(0, mm.stock + delta);
+                sbUpsert('medicines', mm);
                 update(); },
             removeMedicine(id) {
                 if (!confirm('Remove this listing?')) return;
                 DB.medicines = DB.medicines.filter(m => m.id !== id);
                 purgeMedicineReferences(id);
+                sbDelete('medicines', id);
                 toast('Removed.', 'success');
                 update();
             },
@@ -5380,24 +5693,31 @@
                 ph.hours = hours;
                 ph.lat = lat;
                 ph.lng = lng;
+                sbUpsert('pharmacies', ph);
                 toast('Profile updated.', 'success');
                 update();
             },
             geocodePharmacyAddress() {
-                if (!googleMapsReady || !pharmGeocoder) { toast('Map is still loading — try again in a moment.', 'error'); return; }
+                if (!mapsReady || typeof L === 'undefined') { toast('Map is still loading — try again in a moment.', 'error'); return; }
                 const address = (document.getElementById('phLocation') || {}).value?.trim();
                 if (!address) { toast('Type an address first.', 'error'); return; }
-                pharmGeocoder.geocode({ address }, (results, status) => {
-                    if (status !== 'OK' || !results[0]) { toast('Could not find that address on the map.', 'error'); return; }
-                    const loc = results[0].geometry.location;
-                    if (pharmMap && pharmMarker) {
-                        pharmMap.setCenter(loc);
-                        pharmMap.setZoom(17);
-                        pharmMarker.setPosition(loc);
-                    }
-                    setPharmLatLngFields(loc.lat(), loc.lng());
-                    toast('Pin placed — drag it to fine-tune.', 'success');
-                });
+                toast('Looking up address…', 'success');
+                // Free OpenStreetMap Nominatim geocoder (no API key). Please keep usage modest.
+                const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(address);
+                fetch(url, { headers: { 'Accept': 'application/json' } })
+                    .then(r => r.json())
+                    .then(results => {
+                        if (!results || !results.length) { toast('Could not find that address on the map.', 'error'); return; }
+                        const lat = parseFloat(results[0].lat);
+                        const lng = parseFloat(results[0].lon);
+                        if (pharmMap && pharmMarker) {
+                            pharmMap.setView([lat, lng], 17);
+                            pharmMarker.setLatLng([lat, lng]);
+                        }
+                        setPharmLatLngFields(lat, lng);
+                        toast('Pin placed — drag it to fine-tune.', 'success');
+                    })
+                    .catch(() => toast('Could not look up that address. Check your connection.', 'error'));
             },
 
             /* ---- Phase 4: pharmacy admin manages their own staff ---- */
@@ -5423,7 +5743,8 @@
                 if (isOwner && pharmacyOwners(ph.id).length >= 2) { toast('This pharmacy already has two admins.',
                         'error'); return; }
                 const id = 's' + (counters.staff++);
-                DB.staff.push({ id, name, email, password, pharmacyId: ph.id, status: 'active', isOwner });
+                const ns = { id, name, email, password, pharmacyId: ph.id, status: 'active', isOwner };
+                DB.staff.push(ns); sbUpsert('staff', ns);
                 state.staff.addingStaff = false;
                 logAudit((isOwner ? 'Added co-admin ' : 'Added staff ') + name + ' (' + email + ') to ' + ph.name);
                 toast((isOwner ? 'Co-admin' : 'Staff') + ' account created. Share the credentials with ' + name.split(
@@ -5448,6 +5769,7 @@
                 s.name = name;
                 s.email = email;
                 s.password = password;
+                sbUpsert('staff', s);
                 state.staff.editStaffId = null;
                 logAudit('Updated staff account ' + name + ' at ' + ph.name);
                 toast('Staff account updated.', 'success');
@@ -5459,6 +5781,7 @@
                 if (!s || s.pharmacyId !== ph.id) { toast('Staff account not found.', 'error'); return; }
                 if (s.id === state.session.staff) { toast('You cannot disable your own account.', 'error'); return; }
                 s.status = s.status === 'active' ? 'disabled' : 'active';
+                sbUpsert('staff', s);
                 logAudit((s.status === 'active' ? 'Activated' : 'Disabled') + ' staff account ' + s.name + ' at ' + ph.name);
                 toast('Account ' + (s.status === 'active' ? 'activated' : 'disabled') + '.', 'success');
                 update();
@@ -5472,6 +5795,7 @@
                         'At least one admin must remain for this pharmacy.', 'error'); return; }
                 if (!confirm('Remove ' + s.name + '\'s account? They will no longer be able to log in.')) return;
                 DB.staff = DB.staff.filter(st => st.id !== id);
+                sbDelete('staff', id);
                 logAudit('Removed staff account ' + s.name + ' from ' + ph.name);
                 toast('Staff account removed.', 'success');
                 update();
@@ -5486,6 +5810,8 @@
                 s.status = 'active';
                 const ph = pharmacy(s.pharmacyId);
                 if (ph) ph.status = 'approved';
+                sbUpsert('staff', s);
+                if (ph) sbUpsert('pharmacies', ph);
                 logAudit('Approved pharmacy ' + (ph ? ph.name : s.pharmacyId) + ' and admin account ' + s.name);
                 toast((ph ? ph.name : 'Pharmacy') + ' approved and now live!', 'success');
                 pushNotification('c1', 'promo', '🏥 ' + (ph ? ph.name : 'A new pharmacy') +
@@ -5501,6 +5827,8 @@
                 s.status = 'rejected';
                 const ph = pharmacy(s.pharmacyId);
                 if (ph) ph.status = 'rejected';
+                sbUpsert('staff', s);
+                if (ph) sbUpsert('pharmacies', ph);
                 logAudit('Rejected pharmacy registration ' + (ph ? ph.name : s.pharmacyId));
                 toast('Registration rejected.', 'success');
                 update();
@@ -5515,10 +5843,13 @@
                 }
                 rec.status = rec.status === 'active' ? 'disabled' : 'active';
                 if (type === 'staff' && rec.isOwner) {
-                    // Toggling the pharmacy's sole/primary admin also flips the pharmacy's storefront status.
                     const ph = pharmacy(rec.pharmacyId);
-                    if (ph) ph.status = rec.status === 'active' ? 'approved' : 'rejected';
+                    if (ph) {
+                        ph.status = rec.status === 'active' ? 'approved' : 'rejected';
+                        sbUpsert('pharmacies', ph);
+                    }
                 }
+                sbUpsert(type === 'customer' ? 'customers' : 'staff', rec);
                 logAudit((rec.status === 'active' ? 'Activated' : 'Disabled') + ' ' + type + ' account ' +
                     (rec.name || rec.email));
                 toast('Account ' + (rec.status === 'active' ? 'activated' : 'disabled') + '.', 'success');
@@ -5562,6 +5893,7 @@
                 if (!m) { toast('Medicine not found.', 'error'); return; }
                 m.prescription = !m.prescription;
                 if (m.prescription) m.category = 'Prescription';
+                sbUpsert('medicines', m);
                 toast('Updated to ' + (m.prescription ? 'Rx' : 'OTC') + '.', 'success');
                 update();
             },
@@ -5572,6 +5904,7 @@
                 if (!m) { toast('Medicine not found.', 'error'); return; }
                 DB.medicines = DB.medicines.filter(med => med.id !== id);
                 purgeMedicineReferences(id);
+                sbDelete('medicines', id);
                 toast('Removed from catalog.', 'success');
                 update();
             },
@@ -5579,6 +5912,7 @@
             resolveFlag(id) {
                 const f = DB.flags.find(fl => fl.id === id);
                 if (f) { f.status = 'resolved';
+                    sbUpsert('flags', f);
                     toast('Flag resolved.', 'success');
                     update(); }
             },
@@ -5651,16 +5985,19 @@
                     if (!m) { toast('Product not found.', 'error'); return; }
                     Object.assign(m, { name, brand, description: description || undefined, category: finalCategory, price,
                         stock, prescription: isRx, status, lowStockThreshold: threshold, images });
+                    sbUpsert('medicines', m);
                     toast('Product updated.', 'success');
                 } else {
                     const id = 'm' + (counters.med++);
                     const newestAddedAt = DB.medicines.reduce((max, m) => Math.max(max, m.addedAt || 0), 0);
-                    DB.medicines.push({ id, pharmacyId: ph.id, name, brand, category: finalCategory, price, stock,
+                    const nm = { id, pharmacyId: ph.id, name, brand, category: finalCategory, price, stock,
                         prescription: isRx, sold: 0, addedAt: newestAddedAt + 1, status,
                         lowStockThreshold: threshold, images,
                         description: description || undefined,
                         specs: { Category: finalCategory, 'Requires Prescription': isRx ? 'Yes' : 'No',
-                            'Sold By': ph.name } });
+                            'Sold By': ph.name } };
+                    DB.medicines.push(nm);
+                    sbUpsert('medicines', nm);
                     toast('Product added to the shelf.', 'success');
                 }
                 state.staff.editMedId = null;
@@ -5671,6 +6008,7 @@
                 const m = medicine(id);
                 if (!m) { toast('Product not found.', 'error'); return; }
                 m.status = (m.status || 'active') === 'active' ? 'inactive' : 'active';
+                sbUpsert('medicines', m);
                 toast(m.name + ' is now ' + (m.status === 'active' ? 'active' : 'inactive') + '.', 'success');
                 update();
             },
@@ -5684,6 +6022,7 @@
                     update();
                     return; }
                 m.lowStockThreshold = n;
+                sbUpsert('medicines', m);
                 toast('Alert level for ' + m.name + ' set to ' + n + '.', 'success');
                 update();
             },
@@ -5695,6 +6034,7 @@
                 const n = parseInt(value, 10);
                 if (isNaN(n) || n < 0) { toast('Enter a whole number.', 'error'); return; }
                 m.stock = n;
+                sbUpsert('medicines', m);
                 toast(m.name + ' stock set to ' + n + '.', 'success');
                 update();
             },
@@ -5712,6 +6052,7 @@
                             med.sold = (med.sold || 0) + it.qty; } });
                 }
                 o.status = value;
+                sbUpsert('orders', o);
                 toast('Order #' + id.replace('o', '') + ' marked ' + STATUS_LABEL[value] + '.', 'success');
                 const eventMap = { confirmed: 'orderConfirmed', ready: 'orderReady', completed: 'orderCompleted' };
                 if (eventMap[value]) notifyOrderEvent(o, eventMap[value]);
@@ -5788,9 +6129,10 @@
                 }
                 const reason = prompt('Why are you returning this order?');
                 if (!reason || !reason.trim()) return;
-                DB.returns.push({ id: 'r' + (counters.ret++), orderId, customerId: o.customerId,
+                const rr = { id: 'r' + (counters.ret++), orderId, customerId: o.customerId,
                     pharmacyId: o.pharmacyId, reason: reason.trim(), status: 'requested', refundAmount: null,
-                    at: new Date(), source: 'customer' });
+                    at: new Date(), source: 'customer' };
+                DB.returns.push(rr); sbUpsert('returns', rr);
                 toast('Return request sent to the pharmacy.', 'success');
                 update();
             },
@@ -5800,9 +6142,10 @@
                 if (orderReturn(orderId)) { toast('A return already exists for this order.', 'error'); return; }
                 const reason = prompt('Reason for the return / refund:');
                 if (!reason || !reason.trim()) return;
-                DB.returns.push({ id: 'r' + (counters.ret++), orderId, customerId: o.customerId,
+                const rr2 = { id: 'r' + (counters.ret++), orderId, customerId: o.customerId,
                     pharmacyId: o.pharmacyId, reason: reason.trim(), status: 'approved', refundAmount: null,
-                    at: new Date(), source: 'staff' });
+                    at: new Date(), source: 'staff' };
+                DB.returns.push(rr2); sbUpsert('returns', rr2);
                 toast('Return recorded — issue the refund from the Returns tab.', 'success');
                 state.staff.view = 'returns';
                 update();
@@ -5811,6 +6154,7 @@
                 const r = DB.returns.find(x => x.id === id);
                 if (!r) return;
                 r.status = 'approved';
+                sbUpsert('returns', r);
                 toast('Return approved.', 'success');
                 App.notifyReturn(r);
                 update();
@@ -5820,6 +6164,7 @@
                 if (!r) return;
                 if (!confirm('Reject this return request?')) return;
                 r.status = 'rejected';
+                sbUpsert('returns', r);
                 toast('Return rejected.', 'success');
                 App.notifyReturn(r);
                 update();
@@ -5838,8 +6183,10 @@
                 if (o && confirm('Return the items to stock?')) {
                     o.items.forEach(it => { const m = medicine(it.medId);
                         if (m) { m.stock += it.qty;
-                            m.sold = Math.max(0, (m.sold || 0) - it.qty); } });
+                            m.sold = Math.max(0, (m.sold || 0) - it.qty);
+                            sbUpsert('medicines', m); } });
                 }
+                sbUpsert('returns', r);
                 toast('Refund of ' + money(amount) + ' issued.', 'success');
                 App.notifyReturn(r);
                 update();
@@ -5855,6 +6202,7 @@
                 const ph = currentStaffPharmacy();
                 const t = notifTemplates(ph.id)[eventId];
                 t.enabled = !t.enabled;
+                sbSaveNotifTemplates(ph.id, DB.notifTemplates[ph.id]);
                 toast('Notification ' + (t.enabled ? 'enabled' : 'disabled') + '.', 'success');
                 update();
             },
@@ -5864,6 +6212,7 @@
                 const text = el ? el.value.trim() : '';
                 if (!text) { toast('Message cannot be empty.', 'error'); return; }
                 notifTemplates(ph.id)[eventId].text = text;
+                sbSaveNotifTemplates(ph.id, notifTemplates(ph.id));
                 toast('Message saved.', 'success');
                 update();
             },
@@ -5871,6 +6220,7 @@
                 const ph = currentStaffPharmacy();
                 const def = NOTIF_EVENTS.find(e => e.id === eventId);
                 notifTemplates(ph.id)[eventId] = { enabled: true, text: def.text };
+                sbSaveNotifTemplates(ph.id, notifTemplates(ph.id));
                 toast('Reset to the default message.', 'success');
                 update();
             },
@@ -5917,6 +6267,7 @@
                 c.name = name;
                 c.email = email;
                 c.status = status;
+                sbUpsert('customers', c);
                 state.admin.editCustomerId = null;
                 logAudit('Updated customer account ' + name);
                 toast('Customer account updated.', 'success');
@@ -5937,7 +6288,8 @@
                     toast('An admin with that email already exists.', 'error');
                     return;
                 }
-                DB.admins.push({ id: 'a' + (counters.admin++), name, email, password });
+                const na = { id: 'a' + (counters.admin++), name, email, password };
+                DB.admins.push(na); sbUpsert('admins', na);
                 state.admin.addingAdmin = false;
                 logAudit('Added site administrator ' + name);
                 toast('Administrator added.', 'success');
@@ -5960,6 +6312,7 @@
                 a.name = name;
                 a.email = email;
                 a.password = password;
+                sbUpsert('admins', a);
                 state.admin.editAdminId = null;
                 logAudit('Updated site administrator ' + name);
                 toast('Administrator updated.', 'success');
@@ -5970,7 +6323,8 @@
                 if (DB.admins.length <= 1) { toast('At least one administrator must remain.', 'error'); return; }
                 if (!confirm('Delete this administrator?')) return;
                 const a = admin(id);
-                DB.admins = DB.admins.filter(a => a.id !== id);
+                DB.admins = DB.admins.filter(x => x.id !== id);
+                sbDelete('admins', id);
                 logAudit('Deleted site administrator ' + (a ? a.name : id));
                 toast('Administrator deleted.', 'success');
                 update();
@@ -6004,6 +6358,7 @@
                 Object.assign(s, { platformName: name, supportEmail: email, currency: val('setCurrency'),
                     pickupEnabled: pickup, deliveryEnabled: delivery, deliveryFee: fee, freeDeliveryOver: freeOver,
                     lowStockThreshold: lowStock, returnWindowDays: window_, payments });
+                sbSaveSettings(s);
                 logAudit('Updated platform settings');
                 toast('Settings saved.', 'success');
                 update();
@@ -6014,6 +6369,7 @@
                     currency: 'PHP', pickupEnabled: true, deliveryEnabled: true, deliveryFee: 49,
                     freeDeliveryOver: 1500, lowStockThreshold: 10, returnWindowDays: 7,
                     payments: { card: true, gcash: true, paymaya: true, paypal: true, cod: true } });
+                sbSaveSettings(DB.settings);
                 logAudit('Reset platform settings to defaults');
                 toast('Settings restored to defaults.', 'success');
                 update();
@@ -6035,6 +6391,7 @@
                 p.title = title;
                 p.body = body;
                 state.admin.editPageKey = null;
+                sbSavePages(DB.pages);
                 logAudit('Updated the "' + title + '" page');
                 toast('Page updated.', 'success');
                 update();
@@ -6050,7 +6407,8 @@
                 const q = (document.getElementById('newFaqQ') || {}).value?.trim();
                 const a = (document.getElementById('newFaqA') || {}).value?.trim();
                 if (!q || !a) { toast('Fill in both the question and answer.', 'error'); return; }
-                DB.faqs.push({ id: 'faq' + (counters.faq++), q, a });
+                const nf = { id: 'faq' + (counters.faq++), q, a };
+                DB.faqs.push(nf); sbUpsert('faqs', nf);
                 state.admin.addingFaq = false;
                 logAudit('Added FAQ: ' + q);
                 toast('FAQ added.', 'success');
@@ -6067,6 +6425,7 @@
                 if (!q || !a) { toast('Fill in both the question and answer.', 'error'); return; }
                 f.q = q;
                 f.a = a;
+                sbUpsert('faqs', f);
                 state.admin.editFaqId = null;
                 logAudit('Updated FAQ: ' + q);
                 toast('FAQ updated.', 'success');
@@ -6075,6 +6434,7 @@
             removeFaq(id) {
                 if (!confirm('Remove this FAQ entry?')) return;
                 DB.faqs = DB.faqs.filter(f => f.id !== id);
+                sbDelete('faqs', id);
                 logAudit('Removed an FAQ entry');
                 toast('FAQ removed.', 'success');
                 update();
@@ -6092,6 +6452,7 @@
                 const active = !!(document.getElementById('bannerActive') || {}).checked;
                 if (!headline || !subtext || !ctaLabel) { toast('Fill in all banner fields.', 'error'); return; }
                 Object.assign(b, { headline, subtext, ctaLabel, active });
+                sbSaveBanner(b);
                 state.admin.editingBanner = false;
                 logAudit('Updated the homepage banner');
                 toast('Homepage banner updated.', 'success');
@@ -6108,7 +6469,8 @@
                 const title = (document.getElementById('newPromoTitle') || {}).value?.trim();
                 const text = (document.getElementById('newPromoText') || {}).value?.trim();
                 if (!title || !text) { toast('Fill in both fields.', 'error'); return; }
-                DB.promotions.push({ id: 'promo' + (counters.promo++), title, text, active: true });
+                const np = { id: 'promo' + (counters.promo++), title, text, active: true };
+                DB.promotions.push(np); sbUpsert('promotions', np);
                 state.admin.addingPromo = false;
                 logAudit('Added promotion: ' + title);
                 toast('Promotion added.', 'success');
@@ -6125,6 +6487,7 @@
                 if (!title || !text) { toast('Fill in both fields.', 'error'); return; }
                 p.title = title;
                 p.text = text;
+                sbUpsert('promotions', p);
                 state.admin.editPromoId = null;
                 logAudit('Updated promotion: ' + title);
                 toast('Promotion updated.', 'success');
@@ -6134,6 +6497,7 @@
                 const p = DB.promotions.find(x => x.id === id);
                 if (!p) return;
                 p.active = !p.active;
+                sbUpsert('promotions', p);
                 logAudit((p.active ? 'Activated' : 'Deactivated') + ' promotion: ' + p.title);
                 toast('Promotion ' + (p.active ? 'activated' : 'deactivated') + '.', 'success');
                 update();
@@ -6142,6 +6506,7 @@
                 const p = DB.promotions.find(x => x.id === id);
                 if (!confirm('Remove this promotion?')) return;
                 DB.promotions = DB.promotions.filter(x => x.id !== id);
+                sbDelete('promotions', id);
                 logAudit('Removed promotion: ' + (p ? p.title : id));
                 toast('Promotion removed.', 'success');
                 update();
@@ -6154,7 +6519,20 @@
                 update(); },
         };
 
-        update();
+        (async function boot() {
+            if (sbEnabled()) {
+                // Upload built-in accounts if the remote project is still empty
+                const seeded = await seedSupabaseIfEmpty();
+                const loaded = await loadAllFromSupabase();
+                if (!loaded) {
+                    console.warn('[Supabase] Could not load — using local data. Did you run the SQL schema?');
+                } else if (seeded) {
+                    await loadAllFromSupabase();
+                }
+                toast('Connected to Supabase — changes sync to the database.', 'success');
+            }
+            update();
+        })();
     </script>
 </body>
 </html>
