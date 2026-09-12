@@ -2693,6 +2693,47 @@
             update();
         }
 
+        /* ---------- Realtime: live customer profile sync ----------
+           Keeps every staff/admin session's customer list current, so a
+           brand-new signup (especially via Google, which happens with no
+           page reload on the staff/admin side) shows up with their real
+           name instead of "Removed customer".
+           Needs adding to the publication too:
+             alter publication supabase_realtime add table customers;
+        */
+        let realtimeCustomersChannel = null;
+        function setupRealtimeCustomers() {
+            if (!sbEnabled() || realtimeCustomersChannel) return;
+            realtimeCustomersChannel = sb.channel('customers-realtime')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, (payload) => {
+                    console.log('[Realtime] Customers event:', payload.eventType, payload);
+                    handleCustomerRealtimeEvent(payload);
+                })
+                .subscribe((status, err) => {
+                    console.log('[Realtime] Customers channel status:', status, err || '');
+                    if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                        console.error('[Realtime] Customers channel failed.', err);
+                    } else if (status === 'CLOSED') {
+                        realtimeCustomersChannel = null;
+                    }
+                });
+        }
+        function handleCustomerRealtimeEvent(payload) {
+            const { eventType, new: newRow, old: oldRow } = payload;
+            if (eventType === 'DELETE') {
+                const id = oldRow && oldRow.id;
+                DB.customers = DB.customers.filter(c => c.id !== id);
+                update();
+                return;
+            }
+            const incoming = fromRow('customers', newRow);
+            if (!incoming) return;
+            const idx = DB.customers.findIndex(c => c.id === incoming.id);
+            if (idx === -1) DB.customers.push(incoming);
+            else DB.customers[idx] = incoming;
+            update();
+        }
+
         /* Keep a snapshot of the built-in seed so we can upload it if Supabase is empty. */
         const LOCAL_SEED = {
             pharmacies: null, customers: null, staff: null, admins: null,
@@ -6896,6 +6937,7 @@
                 setupRealtimeOrders();
                 setupRealtimeNotifications();
                 setupRealtimeMedicines();
+                setupRealtimeCustomers();
 
                 // Pick up a Google OAuth redirect coming back, or an
                 // already-active session from an earlier visit.
