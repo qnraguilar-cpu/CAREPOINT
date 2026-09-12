@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 
     <style>
         :root {
@@ -2091,6 +2092,16 @@
            every change is written back automatically. */
         const SUPABASE_URL = 'https://tbdfhpliweeranpakaum.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiZGZocGxpd2VlcmFucGFrYXVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNDcyMDgsImV4cCI6MjEwNDYyMzIwOH0.p_-sIGDHB3mWdFmbY5mSBr2BMZbe2MP8smP0ugZVwl4';
+
+        /* ---------- Third-party API config ----------
+           Fill these in with your own account credentials. Both are safe
+           to use from the browser — EmailJS's Public Key and PayMongo's
+           Public Key are specifically designed for client-side use (unlike
+           their respective secret keys, which must never appear here). */
+        const EMAILJS_PUBLIC_KEY = 'MIsfg-BHEugw7o5MY';
+        const EMAILJS_SERVICE_ID = 'service_n3aj3k5';
+        const EMAILJS_TEMPLATE_ID = 'template_66t8l0s';
+        const PAYMONGO_PUBLIC_KEY = 'pk_test_YOUR_PAYMONGO_PUBLIC_KEY';
         const supabaseConfigured = SUPABASE_URL && SUPABASE_ANON_KEY
             && !SUPABASE_URL.includes('YOUR_SUPABASE')
             && !SUPABASE_ANON_KEY.includes('YOUR_SUPABASE');
@@ -2734,6 +2745,67 @@
             update();
         }
 
+        /* ---------- PayMongo: real GCash payment gateway ----------
+           A GCash payment fully leaves the app (PayMongo's hosted GCash
+           checkout), so the order can't be created until the customer is
+           redirected back — see payWithGcash() above for how the request
+           gets sent. This is the return half. */
+        function finalizePendingOrder(pending) {
+            const id = 'o' + (counters.order++);
+            const items = pending.items;
+            items.forEach(it => { const med = medicine(it.medId);
+                if (med) { med.stock -= it.qty; med.sold = (med.sold || 0) + it.qty; } });
+            const newOrder = { id, customerId: pending.customerId, pharmacyId: pending.pharmacyId, items,
+                fulfillment: pending.fulfillment, addressId: pending.addressId, status: 'pending',
+                createdAt: new Date(), paymentMethod: 'gcash', paymentLabel: pending.paymentLabel };
+            DB.orders.push(newOrder);
+            items.forEach(it => { const med = medicine(it.medId); if (med) sbUpsert('medicines', med); });
+            sbUpsert('orders', newOrder);
+            notifyOrderEvent(order(id), 'orderPlaced');
+            sendReceiptEmail(newOrder);
+            delete state.carts[pending.customerId];
+            state.checkout = { fulfillment: 'pickup', addressId: null, paymentMethod: 'card', processing: false };
+            if (state.session.customer === pending.customerId) state.customer.view = 'orders';
+            toast('Order #' + id.replace('o', '') + ' placed via GCash!', 'success');
+            update();
+        }
+        async function checkGcashReturn() {
+            const params = new URLSearchParams(window.location.search);
+            const gcashStatus = params.get('gcash');
+            if (!gcashStatus) return;
+            // Clean the URL immediately so a later refresh can't re-trigger this.
+            window.history.replaceState({}, '', window.location.origin + window.location.pathname);
+
+            const pendingRaw = sessionStorage.getItem('cp_pending_gcash_order');
+            sessionStorage.removeItem('cp_pending_gcash_order');
+            if (!pendingRaw) return;
+            const pending = JSON.parse(pendingRaw);
+
+            if (gcashStatus !== 'success') {
+                toast('GCash payment was not completed — order not placed.', 'error');
+                return;
+            }
+            // Don't just trust the redirect URL — actually verify the
+            // source reached a paid state via PayMongo's API before
+            // creating the order.
+            try {
+                const res = await fetch('https://api.paymongo.com/v1/sources/' + pending.sourceId, {
+                    headers: { 'Authorization': 'Basic ' + btoa(PAYMONGO_PUBLIC_KEY + ':') }
+                });
+                const json = await res.json();
+                const status = json.data && json.data.attributes && json.data.attributes.status;
+                if (status !== 'chargeable' && status !== 'paid') {
+                    toast('Payment could not be verified — order not placed.', 'error');
+                    return;
+                }
+            } catch (err) {
+                console.error('[PayMongo] Verification failed:', err);
+                toast('Could not verify payment — order not placed.', 'error');
+                return;
+            }
+            finalizePendingOrder(pending);
+        }
+
         /* Keep a snapshot of the built-in seed so we can upload it if Supabase is empty. */
         const LOCAL_SEED = {
             pharmacies: null, customers: null, staff: null, admins: null,
@@ -3190,6 +3262,44 @@
 
         function renderTemplate(text, ctx) {
             return String(text).replace(/\{(\w+)\}/g, (_, k) => (ctx[k] !== undefined ? ctx[k] : '{' + k + '}'));
+        }
+
+        /* ---------- EmailJS: real receipt emails ----------
+           Sends an actual email to the customer's inbox via EmailJS's
+           client-safe API (no backend needed — that's the whole point of
+           EmailJS's public key design). */
+        let emailjsReady = false;
+        function initEmailJs() {
+            if (emailjsReady || typeof emailjs === 'undefined') return;
+            if (EMAILJS_PUBLIC_KEY === 'YOUR_EMAILJS_PUBLIC_KEY') return; // not configured yet
+            emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
+            emailjsReady = true;
+        }
+        async function sendReceiptEmail(ord) {
+            initEmailJs();
+            if (!emailjsReady) { console.warn('[EmailJS] Not configured — skipping receipt email.'); return; }
+            const cust = customer(ord.customerId);
+            const ph = pharmacy(ord.pharmacyId);
+            if (!cust || !cust.email) return;
+            const lines = ord.items.map(it => {
+                const med = medicine(it.medId);
+                return (med ? med.name : it.medId) + ' x' + it.qty + ' — ' + money(it.price * it.qty);
+            }).join('\n');
+            const total = ord.items.reduce((s, it) => s + it.price * it.qty, 0);
+            try {
+                await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+                    to_email: cust.email,
+                    to_name: cust.name,
+                    order_id: ord.id.replace('o', '#'),
+                    pharmacy_name: ph ? ph.name : 'CarePoint',
+                    order_items: lines,
+                    order_total: money(total),
+                    payment_label: ord.paymentLabel || ord.paymentMethod
+                });
+                console.log('[EmailJS] Receipt sent to', cust.email);
+            } catch (err) {
+                console.error('[EmailJS] Failed to send receipt:', err);
+            }
         }
 
         function sendTemplatedNotification(phId, eventId, ctx, type) {
@@ -4354,6 +4464,7 @@
                   <p style="font-size:14.5px;"><strong>Payment:</strong> <span class="pay-summary">${orderPaymentIcon(o)} ${esc(orderPaymentLabel(o))}</span></p>
                   <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <button class="btn btn-outline" onclick="${relatedThread ? `App.openThread('customer','${relatedThread.id}')` : `App.newOrderMessage('${o.id}')`}">${icon('quill',15)} Message pharmacist</button>
+                    <button class="btn btn-outline" onclick="App.emailReceipt('${o.id}')">✉️ Email me my receipt</button>
                     ${canConfirmReceipt(o) ? `<button class="btn btn-sage" onclick="App.confirmReceived('${o.id}')">${icon('leaf',15)} I received this order</button>` : ''}
                     ${o.status==='completed' && !orderReturn(o.id) ? `<button class="btn btn-ghost" onclick="App.requestReturn('${o.id}')">↩️ Request return / refund</button>` : ''}
                   </div>
@@ -5837,12 +5948,20 @@
                     if (!cardName || !cardNumber || !cardExpiry || !cardCvv) { toast(
                             'Complete card details.', 'error'); return; }
                     paymentLabel = 'Card •••• ' + cardNumber.replace(/\s/g, '').slice(-4);
-                } else if (method === 'gcash' || method === 'paymaya') {
-                    const brand = method === 'gcash' ? 'GCash' : 'PayMaya';
+                } else if (method === 'gcash') {
+                    // Real payment gateway — hands off to PayMongo entirely,
+                    // including the redirect and order creation on return.
                     const num = (document.getElementById('ewalletNumber') || {}).value?.trim();
                     if (!num || num.replace(/\D/g, '').length < 10) { toast(
-                            'Enter a valid ' + brand + ' mobile number.', 'error'); return; }
-                    paymentLabel = brand + ' •••• ' + num.replace(/\D/g, '').slice(-4);
+                            'Enter a valid GCash mobile number.', 'error'); return; }
+                    paymentLabel = 'GCash •••• ' + num.replace(/\D/g, '').slice(-4);
+                    App.payWithGcash(cart, paymentLabel);
+                    return;
+                } else if (method === 'paymaya') {
+                    const num = (document.getElementById('ewalletNumber') || {}).value?.trim();
+                    if (!num || num.replace(/\D/g, '').length < 10) { toast(
+                            'Enter a valid PayMaya mobile number.', 'error'); return; }
+                    paymentLabel = 'PayMaya •••• ' + num.replace(/\D/g, '').slice(-4);
                 } else if (method === 'paypal') {
                     const email = (document.getElementById('paypalEmail') || {}).value?.trim();
                     if (!email || !email.includes('@')) { toast('Enter a valid PayPal email.', 'error'); return; }
@@ -5854,9 +5973,54 @@
                 state.checkout.processing = true;
                 state.checkout._pending = { method, paymentLabel };
                 update();
-                const gatewayName = { card: 'Stripe', paypal: 'PayPal', gcash: 'GCash', paymaya: 'PayMaya' }[method];
+                const gatewayName = { card: 'Stripe', paypal: 'PayPal', paymaya: 'PayMaya' }[method];
                 toast(gatewayName ? 'Processing payment via ' + gatewayName + '…' : 'Confirming order…', 'success');
                 setTimeout(() => App.finalizeOrder(), 1100);
+            },
+
+            async payWithGcash(cart, paymentLabel) {
+                if (!PAYMONGO_PUBLIC_KEY || PAYMONGO_PUBLIC_KEY.indexOf('YOUR_PAYMONGO') !== -1) {
+                    toast('GCash isn\'t configured yet — add a PayMongo public key.', 'error'); return;
+                }
+                state.checkout.processing = true;
+                update();
+                const items = cart.items.map(it => ({ medId: it.medId, qty: it.qty, price: medicine(it.medId).price }));
+                const total = items.reduce((s, it) => s + it.price * it.qty, 0);
+                const custId = state.session.customer;
+                const redirectBase = window.location.origin + window.location.pathname;
+                try {
+                    const res = await fetch('https://api.paymongo.com/v1/sources', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Basic ' + btoa(PAYMONGO_PUBLIC_KEY + ':')
+                        },
+                        body: JSON.stringify({ data: { attributes: {
+                            amount: Math.round(total * 100),
+                            redirect: { success: redirectBase + '?gcash=success', failed: redirectBase + '?gcash=failed' },
+                            type: 'gcash',
+                            currency: 'PHP'
+                        } } })
+                    });
+                    const json = await res.json();
+                    if (!res.ok) throw new Error((json.errors && json.errors[0] && json.errors[0].detail) ||
+                        'Could not start GCash payment.');
+                    const checkoutUrl = json.data.attributes.redirect.checkout_url;
+                    const sourceId = json.data.id;
+                    // Stash everything needed to create the order — a full
+                    // redirect to PayMongo and back wipes all in-memory JS
+                    // state, so this can't live in `state` alone.
+                    sessionStorage.setItem('cp_pending_gcash_order', JSON.stringify({
+                        customerId: custId, pharmacyId: cart.pharmacyId, items,
+                        fulfillment: state.checkout.fulfillment, addressId: state.checkout.addressId,
+                        paymentLabel, sourceId
+                    }));
+                    window.location.href = checkoutUrl;
+                } catch (err) {
+                    state.checkout.processing = false;
+                    toast(err.message || 'Could not start GCash payment.', 'error');
+                    update();
+                }
             },
 
             finalizeOrder() {
@@ -5880,6 +6044,7 @@
                 items.forEach(it => { const med = medicine(it.medId); if (med) sbUpsert('medicines', med); });
                 sbUpsert('orders', newOrder);
                 notifyOrderEvent(order(id), 'orderPlaced');
+                sendReceiptEmail(newOrder);
                 delete state.carts[custId];
                 state.checkout = { fulfillment: 'pickup', addressId: null, paymentMethod: 'card', processing: false };
                 state.customer.view = 'orders';
@@ -5902,6 +6067,12 @@
                         completed: 'orderCompleted' }[o.status]);
                 }
                 update();
+            },
+            emailReceipt(id) {
+                const o = order(id);
+                if (!o) { toast('Order not found.', 'error'); return; }
+                sendReceiptEmail(o);
+                toast('Receipt emailed!', 'success');
             },
             confirmReceived(id) {
                 const o = order(id);
@@ -6950,6 +7121,7 @@
                         resolveAuthSession(sess.user);
                     }
                 });
+                await checkGcashReturn();
 
                 toast('Connected to Supabase — changes sync to the database.', 'success');
             }
