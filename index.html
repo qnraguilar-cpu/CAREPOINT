@@ -2143,15 +2143,18 @@
                 }),
                 customers: () => ({
                     id: o.id, name: o.name, email: o.email, password: o.password,
+                    user_id: o.userId || null,
                     status: o.status || 'active', addresses: o.addresses || [],
                     wishlist: o.wishlist || []
                 }),
                 staff: () => ({
                     id: o.id, name: o.name, email: o.email, password: o.password,
+                    user_id: o.userId || null,
                     pharmacy_id: o.pharmacyId, status: o.status, is_owner: !!o.isOwner
                 }),
                 admins: () => ({
-                    id: o.id, name: o.name, email: o.email, password: o.password
+                    id: o.id, name: o.name, email: o.email, password: o.password,
+                    user_id: o.userId || null
                 }),
                 orders: () => ({
                     id: o.id, customer_id: o.customerId, pharmacy_id: o.pharmacyId,
@@ -2221,14 +2224,17 @@
                 }),
                 customers: () => ({
                     id: row.id, name: row.name, email: row.email, password: row.password,
+                    userId: row.user_id || null,
                     status: row.status, addresses: row.addresses || [], wishlist: row.wishlist || []
                 }),
                 staff: () => ({
                     id: row.id, name: row.name, email: row.email, password: row.password,
+                    userId: row.user_id || null,
                     pharmacyId: row.pharmacy_id, status: row.status, isOwner: !!row.is_owner
                 }),
                 admins: () => ({
-                    id: row.id, name: row.name, email: row.email, password: row.password
+                    id: row.id, name: row.name, email: row.email, password: row.password,
+                    userId: row.user_id || null
                 }),
                 orders: () => ({
                     id: row.id, customerId: row.customer_id, pharmacyId: row.pharmacy_id,
@@ -5371,18 +5377,44 @@
                 update(); },
 
 
-            login() {
+            async login() {
                 const email = (document.getElementById('loginEmail') || {}).value?.trim().toLowerCase() || '';
                 const pass = ((document.getElementById('loginPassword') || {}).value || '').trim();
                 if (!email || !pass) { toast('Enter email and password.', 'error'); return; }
                 let role = null,
                     user = null;
-                user = DB.customers.find(u => u.email.toLowerCase() === email && u.password === pass);
-                if (user) role = 'customer';
-                if (!user) { user = DB.staff.find(u => u.email.toLowerCase() === email && u.password === pass); if (user)
-                        role = 'staff'; }
-                if (!user) { user = DB.admins.find(u => u.email.toLowerCase() === email && u.password === pass); if (user)
-                        role = 'admin'; }
+
+                // 1) Try real Supabase Auth first — this is the normal path
+                //    once an account has been migrated.
+                if (sbEnabled()) {
+                    const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+                    if (!error && data.user) {
+                        const uid = data.user.id;
+                        user = DB.customers.find(u => u.userId === uid); if (user) role = 'customer';
+                        if (!user) { user = DB.staff.find(u => u.userId === uid); if (user) role = 'staff'; }
+                        if (!user) { user = DB.admins.find(u => u.userId === uid); if (user) role = 'admin'; }
+                    }
+                }
+
+                // 2) Fall back to the legacy plaintext check for accounts that
+                //    haven't been migrated yet (seed demo accounts, staff
+                //    invited by a pharmacy owner, etc). On a successful match
+                //    here, silently create their real Auth account too, so
+                //    every future login goes through path 1 instead.
+                if (!user) {
+                    user = DB.customers.find(u => u.email.toLowerCase() === email && u.password === pass && !u.userId);
+                    if (user) role = 'customer';
+                    if (!user) { user = DB.staff.find(u => u.email.toLowerCase() === email && u.password === pass && !u.userId); if (user) role = 'staff'; }
+                    if (!user) { user = DB.admins.find(u => u.email.toLowerCase() === email && u.password === pass && !u.userId); if (user) role = 'admin'; }
+                    if (user && sbEnabled()) {
+                        const { data } = await sb.auth.signUp({ email, password: pass });
+                        if (data && data.user) {
+                            user.userId = data.user.id;
+                            sbUpsert(role === 'customer' ? 'customers' : role === 'staff' ? 'staff' : 'admins', user);
+                        }
+                    }
+                }
+
                 if (!user) { toast('Invalid email or password.', 'error'); return; }
                 if (role === 'staff' && user.status === 'pending') { toast(
                         'Your pharmacy is awaiting admin approval.', 'error'); return; }
@@ -5403,6 +5435,7 @@
                 update();
             },
             logout() {
+                if (sbEnabled()) sb.auth.signOut();
                 if (state.activeRole) state.session[state.activeRole] = null;
                 state.activeRole = null;
                 state.authView = 'login';
@@ -5411,15 +5444,21 @@
                 update();
             },
 
-            registerCustomer() {
+            async registerCustomer() {
                 const name = (document.getElementById('regName') || {}).value?.trim();
                 const email = (document.getElementById('regEmail') || {}).value?.trim();
                 const pass = (document.getElementById('regPassword') || {}).value;
                 if (!name || !email || !pass) { toast('Fill in all fields.', 'error'); return; }
                 if (DB.customers.some(c => c.email.toLowerCase() === email.toLowerCase())) { toast(
                         'Email already exists.', 'error'); return; }
+                let userId = null;
+                if (sbEnabled()) {
+                    const { data, error } = await sb.auth.signUp({ email, password: pass });
+                    if (error) { toast(error.message || 'Could not create account.', 'error'); return; }
+                    userId = data.user ? data.user.id : null;
+                }
                 const id = 'c' + (DB.customers.length + 1) + '_' + Date.now();
-                const newCust = { id, name, email, password: pass, status: 'active', addresses: [],
+                const newCust = { id, name, email, password: pass, userId, status: 'active', addresses: [],
                 wishlist: [] };
                 DB.customers.push(newCust);
                 sbUpsert('customers', newCust);
@@ -5430,7 +5469,7 @@
                 toast('Account created!', 'success');
                 update();
             },
-            registerStaff() {
+            async registerStaff() {
                 const name = (document.getElementById('regName') || {}).value?.trim();
                 const email = (document.getElementById('regEmail') || {}).value?.trim();
                 const pass = (document.getElementById('regPassword') || {}).value;
@@ -5441,11 +5480,17 @@
                         'Fill in all fields.', 'error'); return; }
                 if (DB.staff.some(s => s.email.toLowerCase() === email.toLowerCase())) { toast(
                         'Email already exists.', 'error'); return; }
+                let userId = null;
+                if (sbEnabled()) {
+                    const { data, error } = await sb.auth.signUp({ email, password: pass });
+                    if (error) { toast(error.message || 'Could not create account.', 'error'); return; }
+                    userId = data.user ? data.user.id : null;
+                }
                 const pid = 'p_' + Date.now();
                 const sid = 's_' + Date.now();
                 const newPh = { id: pid, name: pharmName, location: pharmLocation, hours: pharmHours,
                     status: 'pending', lat: null, lng: null };
-                const newStaff = { id: sid, name, email, password: pass, pharmacyId: pid, status: 'pending',
+                const newStaff = { id: sid, name, email, password: pass, userId, pharmacyId: pid, status: 'pending',
                     isOwner: true };
                 DB.pharmacies.push(newPh);
                 DB.staff.push(newStaff);
