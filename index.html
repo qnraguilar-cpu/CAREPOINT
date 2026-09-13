@@ -2944,6 +2944,14 @@
             return nums.length ? Math.max(...nums) + 1 : fallback;
         }
 
+        /* Prevents a double "Welcome" toast: login()/registerCustomer()/
+           registerStaff() manually set the logged-in state themselves right
+           after a successful Supabase Auth call, but that same call also
+           fires the onAuthStateChange 'SIGNED_IN' event (registered in
+           boot(), needed for Google sign-in's redirect return) — without
+           this guard, both paths race and can both run resolveAuthSession. */
+        let authFlowInProgress = false;
+
         let counters = {
             order: nextCounter(DB.orders, 'o', 1),
             thread: nextCounter(DB.threads, 't', 1),
@@ -5775,6 +5783,8 @@
                 const email = (document.getElementById('loginEmail') || {}).value?.trim().toLowerCase() || '';
                 const pass = ((document.getElementById('loginPassword') || {}).value || '').trim();
                 if (!email || !pass) { toast('Enter email and password.', 'error'); return; }
+                authFlowInProgress = true;
+                try {
                 let role = null,
                     user = null;
 
@@ -5827,6 +5837,9 @@
                 state.publicMedId = null;
                 toast('Welcome, ' + user.name.split(' ')[0] + '!', 'success');
                 update();
+                } finally {
+                    authFlowInProgress = false;
+                }
             },
             logout() {
                 if (sbEnabled()) sb.auth.signOut();
@@ -5845,6 +5858,8 @@
                 if (!name || !email || !pass) { toast('Fill in all fields.', 'error'); return; }
                 if (DB.customers.some(c => c.email.toLowerCase() === email.toLowerCase())) { toast(
                         'Email already exists.', 'error'); return; }
+                authFlowInProgress = true;
+                try {
                 let userId = null;
                 if (sbEnabled()) {
                     const { data, error } = await sb.auth.signUp({ email, password: pass });
@@ -5862,6 +5877,9 @@
                 state.publicMedId = null;
                 toast('Account created!', 'success');
                 update();
+                } finally {
+                    authFlowInProgress = false;
+                }
             },
             async registerStaff() {
                 const name = (document.getElementById('regName') || {}).value?.trim();
@@ -5874,6 +5892,8 @@
                         'Fill in all fields.', 'error'); return; }
                 if (DB.staff.some(s => s.email.toLowerCase() === email.toLowerCase())) { toast(
                         'Email already exists.', 'error'); return; }
+                authFlowInProgress = true;
+                try {
                 let userId = null;
                 if (sbEnabled()) {
                     const { data, error } = await sb.auth.signUp({ email, password: pass });
@@ -5893,6 +5913,9 @@
                 state.authView = 'login';
                 toast('Registration submitted! Awaiting admin approval.', 'success');
                 update();
+                } finally {
+                    authFlowInProgress = false;
+                }
             },
 
             setSearchQuery(v) { state.search.query = v;
@@ -7235,7 +7258,7 @@
                     await resolveAuthSession(session.user);
                 }
                 sb.auth.onAuthStateChange((event, sess) => {
-                    if (event === 'SIGNED_IN' && sess && sess.user && !state.activeRole) {
+                    if (event === 'SIGNED_IN' && sess && sess.user && !state.activeRole && !authFlowInProgress) {
                         resolveAuthSession(sess.user);
                     }
                 });
