@@ -14,8 +14,14 @@
   },
   "dependencies": {
     "@capacitor/android": "^8.5.1",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/browser": "^8.0.4",
     "@capacitor/cli": "^8.5.1",
     "@capacitor/core": "^8.5.1",
-    "@ionic/core": "^9.0.3"
+    "@capawesome/capacitor-google-sign-in": "^0.1.4",
+    "@ionic/core": "^9.0.3",
+    "build": "^0.1.4",
+    "npm": "^12.0.2",
+    "run": "^2.1.4"
   }
 }
