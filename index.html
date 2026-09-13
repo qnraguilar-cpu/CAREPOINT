@@ -10,6 +10,21 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <script type="module">
+        /* Bridge for the Capacitor Android app. This file is loaded as
+           plain (non-module) script everywhere else, so this tiny module
+           block just exposes the plugins as ordinary globals for the rest
+           of the app to use. On the regular website (not inside the
+           Capacitor app), these imports simply resolve to no-ops / are
+           unused, since window.CapCore.isNativePlatform() returns false
+           there and none of this code path runs. */
+        import { Capacitor } from '@capacitor/core';
+        import { Browser as CapacitorBrowser } from '@capacitor/browser';
+        import { App as CapacitorApp } from '@capacitor/app';
+        window.CapCore = Capacitor;
+        window.CapBrowser = CapacitorBrowser;
+        window.CapAppPlugin = CapacitorApp;
+    </script>
 
     <style>
         :root {
@@ -3337,13 +3352,92 @@
                 .filter(id => customer(id));
         }
 
-        /* True when this page is loaded inside the CarePoint Android
-           wrapper's WebView (identified by a marker your Android app adds
-           to its WebView's User-Agent string — see MainActivity setup).
-           Lets the app pick a deep-link redirect instead of a normal web
-           URL for OAuth, so Google sign-in can actually return to the app. */
+        /* True when this page is running inside the CarePoint Android app
+           (Capacitor), as opposed to a normal web browser. Capacitor's own
+           core plugin reports this reliably — no user-agent sniffing
+           needed. On the plain website, window.CapCore won't exist (its
+           bare-specifier import only resolves when Vite bundles this file
+           for the Capacitor build), so this safely returns false there. */
         function isNativeAndroidApp() {
-            return /CarePointAndroidApp/.test(navigator.userAgent);
+            return !!(window.CapCore && window.CapCore.isNativePlatform && window.CapCore.isNativePlatform());
+        }
+
+        /* Handles the deep-link return from Google sign-in inside the
+           Capacitor app. Registered once at boot (see boot() below).
+           Capacitor's App plugin fires 'appUrlOpen' with the full
+           carepoint://auth-callback#access_token=...&refresh_token=...
+           URL once Android hands control back to the app. */
+        /* Shared logic for handling a carepoint://auth-callback URL,
+           however it arrives — either via the live 'appUrlOpen' event
+           (app was already running) or via getLaunchUrl() (app's process
+           was killed while the browser was open and cold-started back in,
+           which is common on Android under memory pressure — the event
+           can fire before any listener exists to catch it in that case,
+           and Capacitor does not replay it, so this direct check is
+           necessary too). */
+        async function processCapacitorAuthUrl(urlString) {
+            if (!urlString) return;
+            console.log('[Capacitor] Processing auth URL:', urlString);
+            try {
+                const url = new URL(urlString);
+                const hashParams = new URLSearchParams(url.hash.startsWith('#') ? url.hash.slice(1) : url.hash);
+                const access_token = hashParams.get('access_token');
+                const refresh_token = hashParams.get('refresh_token');
+                const code = url.searchParams.get('code');
+
+                let sessionData = null, error = null;
+                if (access_token && refresh_token && sbEnabled()) {
+                    ({ data: sessionData, error } = await sb.auth.setSession({ access_token, refresh_token }));
+                } else if (code && sbEnabled()) {
+                    ({ data: sessionData, error } = await sb.auth.exchangeCodeForSession(code));
+                } else {
+                    return; // not an auth callback URL — nothing to do
+                }
+
+                if (window.CapBrowser && window.CapBrowser.close) window.CapBrowser.close();
+
+                if (!error && sessionData && sessionData.user) {
+                    await resolveAuthSession(sessionData.user);
+                } else if (error) {
+                    console.error('[Capacitor] Auth error:', error);
+                    toast(error.message || 'Sign-in failed.', 'error');
+                }
+            } catch (err) {
+                console.error('[Capacitor] Failed to handle auth deep link:', err);
+            }
+        }
+
+        function setupCapacitorAuthListener() {
+            // The Capacitor bridge script (a <script type="module">) loads
+            // slightly after this classic script runs, so window.CapAppPlugin
+            // may not exist on the very first call — poll briefly instead of
+            // giving up immediately.
+            let tries = 0;
+            const tryRegister = () => {
+                if (window.CapAppPlugin && window.CapAppPlugin.addListener) {
+                    // Case 1: app was already running, browser closes and
+                    // hands control back via the normal event.
+                    window.CapAppPlugin.addListener('appUrlOpen', (data) => {
+                        processCapacitorAuthUrl(data.url);
+                    });
+                    // Case 2: app's process was killed while the browser was
+                    // open (cold start) — ask Capacitor directly for the URL
+                    // that launched this fresh instance, since the event
+                    // above may have already fired and been lost before this
+                    // listener existed.
+                    if (window.CapAppPlugin.getLaunchUrl) {
+                        window.CapAppPlugin.getLaunchUrl().then(result => {
+                            if (result && result.url) processCapacitorAuthUrl(result.url);
+                        }).catch(() => {});
+                    }
+                    console.log('[Capacitor] appUrlOpen listener registered.');
+                    return;
+                }
+                tries++;
+                if (tries < 60) setTimeout(tryRegister, 50);
+                else console.warn('[Capacitor] Gave up waiting for CapAppPlugin bridge.');
+            };
+            tryRegister();
         }
 
         function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;',
@@ -5630,12 +5724,18 @@
 
             async loginWithGoogle() {
                 if (!sbEnabled()) { toast('Supabase not connected.', 'error'); return; }
-                const redirectTo = isNativeAndroidApp()
-                    ? 'carepoint://auth-callback'
-                    : window.location.href.split('#')[0].split('?')[0];
+                if (isNativeAndroidApp()) {
+                    const { data, error } = await sb.auth.signInWithOAuth({
+                        provider: 'google',
+                        options: { redirectTo: 'carepoint://auth-callback', skipBrowserRedirect: true }
+                    });
+                    if (error) { toast(error.message || 'Could not start Google sign-in.', 'error'); return; }
+                    if (data && data.url) window.CapBrowser.open({ url: data.url });
+                    return;
+                }
                 const { error } = await sb.auth.signInWithOAuth({
                     provider: 'google',
-                    options: { redirectTo }
+                    options: { redirectTo: window.location.href.split('#')[0].split('?')[0] }
                 });
                 if (error) toast(error.message || 'Could not start Google sign-in.', 'error');
             },
@@ -5653,12 +5753,19 @@
                 sessionStorage.setItem('cp_pending_pharmacy_signup', JSON.stringify({
                     name, pharmName, pharmLocation, pharmHours
                 }));
-                const redirectTo = isNativeAndroidApp()
-                    ? 'carepoint://auth-callback'
-                    : window.location.href.split('#')[0].split('?')[0];
+                if (isNativeAndroidApp()) {
+                    const { data, error } = await sb.auth.signInWithOAuth({
+                        provider: 'google',
+                        options: { redirectTo: 'carepoint://auth-callback', skipBrowserRedirect: true }
+                    });
+                    if (error) { sessionStorage.removeItem('cp_pending_pharmacy_signup');
+                        toast(error.message || 'Could not start Google sign-in.', 'error'); return; }
+                    if (data && data.url) window.CapBrowser.open({ url: data.url });
+                    return;
+                }
                 const { error } = await sb.auth.signInWithOAuth({
                     provider: 'google',
-                    options: { redirectTo }
+                    options: { redirectTo: window.location.href.split('#')[0].split('?')[0] }
                 });
                 if (error) { sessionStorage.removeItem('cp_pending_pharmacy_signup');
                     toast(error.message || 'Could not start Google sign-in.', 'error'); }
@@ -7105,6 +7212,7 @@
         };
 
         (async function boot() {
+            setupCapacitorAuthListener();
             if (sbEnabled()) {
                 // Upload built-in accounts if the remote project is still empty
                 const seeded = await seedSupabaseIfEmpty();
@@ -7132,8 +7240,6 @@
                     }
                 });
                 await checkGcashReturn();
-
-                toast('Connected to Supabase — changes sync to the database.', 'success');
             }
             update();
         })();
