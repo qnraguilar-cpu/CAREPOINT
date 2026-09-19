@@ -10,21 +10,14 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-    <script type="module">
-        /* Bridge for the Capacitor Android app. This file is loaded as
-           plain (non-module) script everywhere else, so this tiny module
-           block just exposes the plugins as ordinary globals for the rest
-           of the app to use. On the regular website (not inside the
-           Capacitor app), these imports simply resolve to no-ops / are
-           unused, since window.CapCore.isNativePlatform() returns false
-           there and none of this code path runs. */
-        import { Capacitor } from '@capacitor/core';
-        import { Browser as CapacitorBrowser } from '@capacitor/browser';
-        import { App as CapacitorApp } from '@capacitor/app';
-        window.CapCore = Capacitor;
-        window.CapBrowser = CapacitorBrowser;
-        window.CapAppPlugin = CapacitorApp;
-    </script>
+    <!-- No Capacitor bridge script here -- this is the website-only build.
+         The Android app's copy of this file (in your carepoint-app project)
+         keeps the <script type="module"> block that imports @capacitor/core,
+         @capacitor/browser, @capacitor/app and @capacitor/splash-screen.
+         isNativeAndroidApp() checks location.origin, not these plugins, so
+         it already returns false on the website regardless -- this script
+         was dead code here, just one that broke Vite's build unless those
+         npm packages were also installed in this repo. -->
 
     <style>
         :root {
@@ -1594,6 +1587,386 @@
             }
         }
 
+        /* ---------- Native app: bottom tab bar ---------- */
+        body.native-app main {
+            padding-bottom: 84px;
+        }
+        .bottom-tabbar {
+            position: fixed;
+            left: 0; right: 0; bottom: 0;
+            z-index: 60;
+            background: rgba(250, 247, 242, 0.96);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-top: 1px solid var(--stone-dark);
+            display: flex;
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        .bottom-tab {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            background: none;
+            border: none;
+            padding: 9px 4px 8px;
+            color: var(--walnut-faint);
+            font-size: 10.5px;
+            font-weight: 600;
+            font-family: var(--font-body);
+            position: relative;
+        }
+        .bottom-tab.active {
+            color: var(--terracotta-dark);
+        }
+        .bottom-tab .bottom-tab-dot {
+            position: absolute;
+            top: 4px;
+            right: 26%;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--danger);
+            border: 1.5px solid var(--parchment);
+        }
+        .more-sheet-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(28, 19, 13, 0.4);
+            z-index: 70;
+            display: flex;
+            align-items: flex-end;
+        }
+        .more-sheet {
+            background: var(--surface);
+            width: 100%;
+            border-radius: 20px 20px 0 0;
+            padding: 8px 8px calc(14px + env(safe-area-inset-bottom, 0px));
+            box-shadow: 0 -8px 28px rgba(44, 30, 22, 0.18);
+        }
+        .more-sheet-handle {
+            width: 36px;
+            height: 4px;
+            border-radius: 999px;
+            background: var(--stone-dark);
+            margin: 8px auto 12px;
+        }
+        .more-sheet-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            padding: 13px 14px;
+            border: none;
+            background: none;
+            border-radius: 12px;
+            font-size: 14.5px;
+            font-weight: 600;
+            color: var(--walnut);
+            text-align: left;
+        }
+        .more-sheet-item:active {
+            background: var(--stone);
+        }
+        .more-sheet-item .badge-count {
+            margin-left: auto;
+        }
+        /* Tightens overall spacing so it reads as an app screen, not a
+           scaled-down website, when running inside the Capacitor shell. */
+        body.native-app .topbar-inner {
+            padding: 10px 16px;
+        }
+        body.native-app .brand-tag {
+            display: none;
+        }
+        body.native-app main {
+            padding: 16px 14px 84px;
+        }
+        body.native-app .card {
+            padding: 16px;
+            border-radius: 14px 8px 14px 8px;
+        }
+        body.native-app .section-title {
+            font-size: 21px;
+        }
+        body.native-app nav.subnav {
+            display: none;
+        }
+        body.native-app .notif-panel {
+            position: fixed;
+            top: 58px;
+            left: 12px;
+            right: 12px;
+            width: auto;
+            max-width: none;
+            max-height: 70vh;
+        }
+        body.native-app .bell-btn, body.native-app .msg-btn, body.native-app .satchel-btn {
+            width: 34px;
+            height: 34px;
+        }
+
+        /* ---------- Native app: mobile-style Home screen ---------- */
+        .mobile-search-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+        .mobile-search-row input {
+            flex: 1;
+            padding: 11px 16px;
+            border: none;
+            border-radius: 999px;
+            background: var(--stone);
+            font-size: 14px;
+            color: var(--walnut);
+        }
+        .mobile-search-row input:focus {
+            outline: none;
+            box-shadow: 0 0 0 2px var(--terracotta);
+        }
+        .mobile-filter-btn {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            border: none;
+            background: var(--terracotta-tint);
+            color: var(--terracotta-dark);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            position: relative;
+        }
+        .mobile-filter-dot {
+            position: absolute;
+            top: 2px; right: 2px;
+            width: 9px; height: 9px;
+            border-radius: 50%;
+            background: var(--danger);
+            border: 1.5px solid var(--surface);
+        }
+        .mobile-cat-scroll, .mobile-pharm-scroll {
+            display: flex;
+            gap: 14px;
+            overflow-x: auto;
+            padding: 2px 2px 10px;
+            margin-bottom: 4px;
+            scrollbar-width: none;
+        }
+        .mobile-cat-scroll::-webkit-scrollbar, .mobile-pharm-scroll::-webkit-scrollbar { display: none; }
+        .mobile-cat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+            background: none;
+            border: none;
+            width: 62px;
+        }
+        .mobile-cat-ring {
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+            background: var(--sage-tint);
+            color: var(--sage-dark);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background .15s ease, color .15s ease;
+        }
+        .mobile-cat-item.active .mobile-cat-ring {
+            background: var(--terracotta);
+            color: #fff;
+        }
+        .mobile-cat-item span:last-child {
+            font-size: 10.5px;
+            font-weight: 600;
+            color: var(--walnut-soft);
+            text-align: center;
+            line-height: 1.2;
+        }
+        .mobile-pharm-card {
+            flex-shrink: 0;
+            width: 168px;
+            background: var(--surface);
+            border: 1px solid var(--stone-dark);
+            border-radius: 14px 6px 14px 6px;
+            padding: 13px;
+        }
+        .mobile-product-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        /* The desktop med-card is reused here but needs to actually shrink
+           to fit a narrow grid column — grid items default to a min-width
+           that ignores their content, which was pushing the whole page
+           into horizontal overflow. */
+        .mobile-product-grid .med-card {
+            min-width: 0;
+            padding: 11px;
+            gap: 8px;
+        }
+        .mobile-product-grid .med-card-top {
+            gap: 8px;
+            min-width: 0;
+        }
+        .mobile-product-grid .med-card-top > div {
+            min-width: 0;
+        }
+        .mobile-product-grid .med-picture {
+            width: 50px !important;
+            height: 50px !important;
+        }
+        .mobile-product-grid .med-name {
+            font-size: 12.5px;
+            line-height: 1.25;
+            overflow-wrap: break-word;
+        }
+        .mobile-product-grid .med-cat {
+            font-size: 9.5px;
+            padding: 3px 8px 3px 5px;
+        }
+        .mobile-product-grid .med-pharmacy,
+        .mobile-product-grid .stock-line {
+            font-size: 10px;
+            overflow-wrap: break-word;
+        }
+        .mobile-product-grid .med-price {
+            font-size: 14px;
+        }
+        .mobile-product-grid .med-bottom {
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        body.native-app {
+            overflow-x: hidden;
+        }
+        body.native-app main {
+            overflow-x: hidden;
+        }
+        .mobile-section-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 20px 0 10px;
+        }
+        .mobile-section-head h3 {
+            font-family: var(--font-display);
+            font-size: 15.5px;
+            margin: 0;
+            color: var(--walnut);
+        }
+        .mobile-section-head button {
+            background: none;
+            border: none;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--terracotta-dark);
+        }
+        /* ---------- Native app: splash & nav-loading overlay ---------- */
+        .nav-loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: var(--parchment);
+            z-index: 500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .nav-loading-overlay .nav-spinner {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            border: 3px solid var(--stone-dark);
+            border-top-color: var(--terracotta);
+            animation: spin .7s linear infinite;
+        }
+        #bootSplash {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: linear-gradient(160deg, var(--sage-dark), var(--terracotta-dark));
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: opacity .35s ease;
+        }
+        #bootSplash.fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .boot-splash-mark {
+            width: 76px;
+            height: 76px;
+            border-radius: 50% 14% 50% 50%;
+            background: rgba(255, 255, 255, 0.18);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 18px;
+        }
+        .boot-splash-title {
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 26px;
+            color: #fff;
+            letter-spacing: -0.01em;
+        }
+        .boot-splash-sub {
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.78);
+            margin-top: 4px;
+        }
+
+        .pagination {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid var(--stone);
+        }
+        .pagination-nums {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .pagination-num {
+            min-width: 30px;
+            height: 30px;
+            padding: 0 6px;
+            border-radius: 8px;
+            border: 1.5px solid var(--stone-dark);
+            background: var(--surface);
+            color: var(--walnut-soft);
+            font-size: 12.5px;
+            font-weight: 700;
+        }
+        .pagination-num.active {
+            background: var(--terracotta);
+            border-color: var(--terracotta);
+            color: #fff;
+        }
+        .pagination-num:hover:not(.active) {
+            border-color: var(--walnut);
+        }
+        .pagination-ellipsis {
+            color: var(--walnut-faint);
+            font-size: 12.5px;
+            padding: 0 2px;
+        }
+
         .leaflet-container {
             font-family: var(--font-body);
             z-index: 1;
@@ -1987,6 +2360,23 @@
 </head>
 <body>
     <div id="toastContainer"></div>
+    <div id="bootSplash">
+        <div class="boot-splash-mark">
+            <svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20c0-9 6-15 15-15-1 9-7 15-15 15Z"/><path d="M4 20c3-3 6-6 12-11"/></svg>
+        </div>
+        <div class="boot-splash-title">CarePoint</div>
+        <div class="boot-splash-sub">The Neighborhood Apothecary</div>
+    </div>
+    <script>
+        // Runs synchronously, immediately — long before the deferred
+        // Capacitor bridge module loads. Capacitor apps always serve their
+        // content from https://localhost, so this is a reliable way to
+        // tell "native app" from "website" without waiting on anything,
+        // preventing any flash of this boot screen on the real website.
+        if (location.origin !== 'https://localhost') {
+            document.getElementById('bootSplash').style.display = 'none';
+        }
+    </script>
     <div id="app"></div>
 
     <script>
@@ -2990,6 +3380,10 @@
             pendingImage: null,
             lightbox: null,
             notifPanelOpen: false,
+            mobileMoreOpen: false,
+            mobileFilterSheetOpen: false,
+            navLoading: false,
+            pagination: {},
             reviewDraft: {}, // only rating stored
             publicView: 'landing', // landing | catalog | medicine | auth | page
             publicMedId: null,
@@ -3023,6 +3417,7 @@
             wallet: '<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H18a1 1 0 0 1 1 1v2"/><path d="M3 7.5v10A2.5 2.5 0 0 0 5.5 20H19a1 1 0 0 0 1-1v-3.5"/><rect x="14.5" y="11" width="6.5" height="5" rx="1.3"/><circle cx="17" cy="13.5" r=".6" fill="currentColor" stroke="none"/>',
             globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5a13 13 0 0 1 0 17M12 3.5a13 13 0 0 0 0 17"/>',
             cash: '<rect x="2.5" y="6.5" width="19" height="11" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M5.5 6.5v11M18.5 6.5v11" stroke-dasharray="1.5 2"/>',
+            user: '<circle cx="12" cy="8" r="3.6"/><path d="M5 20c1.5-4 4-6 7-6s5.5 2 7 6"/>',
         };
 
         function icon(name, size, cls) {
@@ -3361,13 +3756,15 @@
         }
 
         /* True when this page is running inside the CarePoint Android app
-           (Capacitor), as opposed to a normal web browser. Capacitor's own
-           core plugin reports this reliably — no user-agent sniffing
-           needed. On the plain website, window.CapCore won't exist (its
-           bare-specifier import only resolves when Vite bundles this file
-           for the Capacitor build), so this safely returns false there. */
+           (Capacitor), as opposed to a normal web browser. Capacitor apps
+           always serve their content from https://localhost — this is a
+           reliable, INSTANT, synchronous signal (unlike checking
+           window.CapCore, which only becomes available once the deferred
+           Capacitor bridge module script finishes loading — a race that
+           could let the very first render use the wrong, desktop-style
+           layout before correcting itself). */
         function isNativeAndroidApp() {
-            return !!(window.CapCore && window.CapCore.isNativePlatform && window.CapCore.isNativePlatform());
+            return location.origin === 'https://localhost';
         }
 
         /* Handles the deep-link return from Google sign-in inside the
@@ -3450,6 +3847,43 @@
 
         function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;',
                 '"': '&quot;', "'": '&#39;' } [c])); }
+
+        /* ---------- Pagination (used across every list in the app) ----------
+           Each list on screen gets its own independent page number, tracked
+           by a short string key (e.g. 'customerShop', 'adminOrders') in
+           state.pagination. paginate() slices the list; paginationHtml()
+           renders the Prev/Next + page-number control to go under it. */
+        const PAGE_SIZE = 10;
+        function paginate(list, key, pageSize) {
+            pageSize = pageSize || PAGE_SIZE;
+            const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+            let page = state.pagination[key] || 1;
+            if (page > totalPages) page = totalPages;
+            if (page < 1) page = 1;
+            const start = (page - 1) * pageSize;
+            return { items: list.slice(start, start + pageSize), page, totalPages, total: list.length };
+        }
+        function paginationHtml(key, page, totalPages) {
+            if (totalPages <= 1) return '';
+            let shown;
+            if (totalPages <= 7) {
+                shown = Array.from({ length: totalPages }, (_, i) => i + 1);
+            } else {
+                shown = [1];
+                if (page > 3) shown.push('…');
+                for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) shown.push(i);
+                if (page < totalPages - 2) shown.push('…');
+                shown.push(totalPages);
+            }
+            return `<div class="pagination">
+                <button class="btn btn-outline btn-sm" ${page<=1?'disabled':''} onclick="App.setPage('${key}',${page-1})">&larr; Prev</button>
+                <div class="pagination-nums">
+                  ${shown.map(p => p==='…' ? `<span class="pagination-ellipsis">…</span>` :
+                    `<button class="pagination-num ${p===page?'active':''}" onclick="App.setPage('${key}',${p})">${p}</button>`).join('')}
+                </div>
+                <button class="btn btn-outline btn-sm" ${page>=totalPages?'disabled':''} onclick="App.setPage('${key}',${page+1})">Next &rarr;</button>
+              </div>`;
+        }
 
         function fmtDate(d) { return new Date(d).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric',
                 minute: '2-digit' }); }
@@ -3556,6 +3990,7 @@
 
         /* ---------- Render engine ---------- */
         function update() {
+            document.body.classList.toggle('native-app', isNativeAndroidApp());
             const active = document.activeElement;
             const activeId = active && active.id ? active.id : null;
             const selStart = active && 'selectionStart' in active ? active.selectionStart : null;
@@ -3580,8 +4015,12 @@
 
         function buildApp() {
             const isAdmin = state.activeRole === 'admin' && state.session.admin;
-            return topbar() + subnav() + `<main class="${isAdmin?'admin-main':''}">` + mainContent() + '</main>' +
-                footerHtml() + lightboxHtml();
+            const native = isNativeAndroidApp();
+            if (native && state.navLoading) {
+                return `<div class="nav-loading-overlay"><div class="nav-spinner"></div></div>`;
+            }
+            return topbar() + (native ? '' : subnav()) + `<main class="${isAdmin?'admin-main':''}">` + mainContent() + '</main>' +
+                (native ? bottomTabBar() : '') + footerHtml() + lightboxHtml();
         }
 
         function lightboxHtml() {
@@ -3658,9 +4097,10 @@
         /* Visitors get their own nav so the site is browsable without an account. */
         function guestNav() {
             const v = state.publicView;
+            const native = isNativeAndroidApp();
             return `<div class="guest-nav">
-              <button class="navlink ${v==='landing'?'active':''}" onclick="App.goPublic('landing')">Home</button>
-              <button class="navlink ${(v==='catalog'||v==='medicine')?'active':''}" onclick="App.goPublic('catalog')">Browse</button>
+              ${native ? '' : `<button class="navlink ${v==='landing'?'active':''}" onclick="App.goPublic('landing')">Home</button>
+              <button class="navlink ${(v==='catalog'||v==='medicine')?'active':''}" onclick="App.goPublic('catalog')">Browse</button>`}
               <button class="navlink ${v==='auth'?'active':''}" onclick="App.goAuth('login')">Log in</button>
               <button class="btn btn-primary btn-sm" onclick="App.goAuth('register')">Sign up</button>
             </div>`;
@@ -3681,54 +4121,108 @@
         }
 
         /* ---------- Sub nav ---------- */
-        function subnav() {
-            const role = state.activeRole;
-            if (!state.session[role]) return '';
-            let tabs = [];
+        /* Single source of truth for each role's navigation tabs — used by
+           both the desktop-style top subnav and the native app's bottom
+           tab bar / "More" sheet. Returns [key, label, badgeCount]. */
+        function tabsForRole(role) {
             if (role === 'customer') {
                 const unreadCount = unreadForCustomer(state.session.customer);
                 const wishCount = (currentCustomer().wishlist || []).length;
-                tabs = [
-                    ['home', 'Shop'],
-                    ['wishlist', 'Wishlist' + (wishCount ? ` <span class="badge-count">${wishCount}</span>` : '')],
-                    ['cart', 'Satchel' + (cartCount() ? ` <span class="badge-count">${cartCount()}</span>` : '')],
-                    ['orders', 'My Orders'],
-                    ['messages', 'Messages' + (unreadCount ? ` <span class="badge-count">${unreadCount}</span>` : '')],
-                    ['profile', 'Profile']
+                return [
+                    ['home', 'Shop', 0],
+                    ['wishlist', 'Wishlist', wishCount],
+                    ['cart', 'Satchel', cartCount()],
+                    ['orders', 'My Orders', 0],
+                    ['messages', 'Messages', unreadCount],
+                    ['profile', 'Profile', 0]
                 ];
-            } else if (role === 'staff') {
+            }
+            if (role === 'staff') {
                 const ph = currentStaffPharmacy();
                 const pending = DB.orders.filter(o => o.pharmacyId === ph.id && o.status === 'pending').length;
                 const openMsgs = unreadForStaffPharmacy(ph.id);
                 const lowStock = lowStockMedicines(ph.id).length + outOfStockMedicines(ph.id).length;
                 const openReturns = pharmacyReturns(ph.id).filter(r => r.status === 'requested').length;
-                tabs = [
-                    ['orders', 'Workbench' + (pending ? ` <span class="badge-count">${pending}</span>` : '')],
-                    ['listings', 'The Shelf'],
-                    ['inventory', 'Inventory' + (lowStock ? ` <span class="badge-count">${lowStock}</span>` : '')],
-                    ['returns', 'Returns' + (openReturns ? ` <span class="badge-count">${openReturns}</span>` : '')],
-                    ['messages', 'Counter' + (openMsgs ? ` <span class="badge-count">${openMsgs}</span>` : '')],
-                    ['sales', 'Sales'],
-                    ['notices', 'Notices'],
-                    ...(isPharmacyOwner() ? [['team', 'Team']] : []),
-                    ['profile', 'Profile']
-                ];
-            } else if (role === 'admin') {
-                const pendingApprovals = DB.staff.filter(s => s.status === 'pending').length;
-                const openFlags = DB.flags.filter(f => f.status === 'open').length;
-                tabs = [
-                    ['approvals', 'Registry' + (pendingApprovals ? ` <span class="badge-count">${pendingApprovals}</span>` :
-                        '')],
-                    ['accounts', 'Accounts'],
-                    ['catalog', 'Herbal Index'],
-                    ['orders', 'All Orders'],
-                    ['flags', 'Flags' + (openFlags ? ` <span class="badge-count">${openFlags}</span>` : '')],
-                    ['reports', 'Tally'],
-                    ['content', 'Content'],
-                    ['audit', 'Audit Trail'],
-                    ['settings', 'Settings']
+                return [
+                    ['orders', 'Workbench', pending],
+                    ['listings', 'The Shelf', 0],
+                    ['inventory', 'Inventory', lowStock],
+                    ['returns', 'Returns', openReturns],
+                    ['messages', 'Counter', openMsgs],
+                    ['sales', 'Sales', 0],
+                    ['notices', 'Notices', 0],
+                    ...(isPharmacyOwner() ? [['team', 'Team', 0]] : []),
+                    ['profile', 'Profile', 0]
                 ];
             }
+            if (role === 'admin') {
+                const pendingApprovals = DB.staff.filter(s => s.status === 'pending').length;
+                const openFlags = DB.flags.filter(f => f.status === 'open').length;
+                return [
+                    ['approvals', 'Registry', pendingApprovals],
+                    ['accounts', 'Accounts', 0],
+                    ['catalog', 'Herbal Index', 0],
+                    ['orders', 'All Orders', 0],
+                    ['flags', 'Flags', openFlags],
+                    ['reports', 'Tally', 0],
+                    ['content', 'Content', 0],
+                    ['audit', 'Audit Trail', 0],
+                    ['settings', 'Settings', 0]
+                ];
+            }
+            return [];
+        }
+        const TAB_ICON = {
+            home: 'leaf', wishlist: 'heart', cart: 'cart', orders: 'jar', messages: 'envelope', profile: 'user',
+            listings: 'leaf', inventory: 'cross', returns: 'droplet', sales: 'star', notices: 'bell', team: 'building',
+            approvals: 'bell', accounts: 'building', catalog: 'capsule', flags: 'cross', reports: 'jar',
+            content: 'quill', audit: 'sprout', settings: 'wallet'
+        };
+        /* First 4 tabs appear directly in the bottom bar; everything else
+           lives behind "More" — a real bottom tab bar can't fit 6-9 items. */
+        function bottomTabBar() {
+            const role = state.activeRole;
+            if (!role || !state.session[role]) return '';
+            const tabs = tabsForRole(role);
+            const primary = tabs.slice(0, 4);
+            const overflow = tabs.slice(4);
+            const activeView = state[role].view;
+            const overflowActive = overflow.some(([key]) => key === activeView);
+            const tabBtn = ([key, label, badge]) => `
+                <button class="bottom-tab ${activeView===key?'active':''}" onclick="App.setView('${role}','${key}')">
+                    ${icon(TAB_ICON[key] || 'leaf', 21)}
+                    ${badge ? `<span class="bottom-tab-dot"></span>` : ''}
+                    <span>${esc(label)}</span>
+                </button>`;
+            const moreBtn = overflow.length ? `
+                <button class="bottom-tab ${overflowActive?'active':''}" onclick="App.toggleMoreSheet()">
+                    ${icon('quill', 21)}
+                    ${overflow.some(([,,b]) => b) ? `<span class="bottom-tab-dot"></span>` : ''}
+                    <span>More</span>
+                </button>` : '';
+            return `<nav class="bottom-tabbar">${primary.map(tabBtn).join('')}${moreBtn}</nav>${moreSheetHtml(role, overflow)}`;
+        }
+        function moreSheetHtml(role, overflow) {
+            if (!state.mobileMoreOpen) return '';
+            return `<div class="more-sheet-overlay" onclick="App.toggleMoreSheet()">
+                <div class="more-sheet" onclick="event.stopPropagation();">
+                    <div class="more-sheet-handle"></div>
+                    ${overflow.map(([key, label, badge]) => `
+                        <button class="more-sheet-item" onclick="App.setView('${role}','${key}');App.toggleMoreSheet()">
+                            ${icon(TAB_ICON[key] || 'leaf', 19)}
+                            <span>${esc(label)}</span>
+                            ${badge ? `<span class="badge-count">${badge}</span>` : ''}
+                        </button>`).join('')}
+                    <button class="more-sheet-item" onclick="App.logout()">${icon('cross',19)}<span>Log out</span></button>
+                </div>
+            </div>`;
+        }
+
+        function subnav() {
+            const role = state.activeRole;
+            if (!state.session[role]) return '';
+            const tabs = tabsForRole(role).map(([key, label, badge]) =>
+                [key, esc(label) + (badge ? ` <span class="badge-count">${badge}</span>` : '')]);
             const activeView = state[role].view;
             return `<nav class="subnav"><div class="subnav-inner">` +
                 tabs.map(([v, label]) =>
@@ -3751,12 +4245,14 @@
             const key = state.publicPageKey;
             const back = `<p style="margin:0 0 14px;"><button class="btn-link" onclick="App.goPublic('landing')">&larr; Back to CarePoint</button></p>`;
             if (key === 'faqs') {
+                const faqPage = paginate(DB.faqs, 'publicFaqs');
                 return `<div class="auth-wrap">${back}<div class="card">
                   <h2 class="section-title" style="margin-top:0;">Frequently Asked Questions</h2>
-                  ${DB.faqs.length ? DB.faqs.map(f=>`<div style="padding:12px 0;border-bottom:1px solid var(--stone);">
+                  ${DB.faqs.length ? faqPage.items.map(f=>`<div style="padding:12px 0;border-bottom:1px solid var(--stone);">
                       <strong style="font-family:var(--font-display);">${esc(f.q)}</strong>
                       <p style="margin:6px 0 0;color:var(--walnut-soft);">${esc(f.a)}</p>
                     </div>`).join('') : `<p class="hint">No FAQs published yet.</p>`}
+                  ${paginationHtml('publicFaqs', faqPage.page, faqPage.totalPages)}
                 </div></div>`;
             }
             const p = DB.pages[key];
@@ -3943,6 +4439,7 @@
 
         function publicCatalog() {
             const meds = filteredMedicines();
+            const medsPage = paginate(meds, 'publicCatalog', 12);
             const approvedPharmacies = DB.pharmacies.filter(p => p.status === 'approved');
             return `<button class="btn-link" onclick="App.goPublic('landing')">&larr; Back to home</button>
               <h2 class="section-title" style="margin-top:12px;">The full shelf</h2>
@@ -3990,8 +4487,9 @@
                 <span class="results-count" style="margin:0;">${meds.length} result${meds.length===1?'':'s'}</span>
               </div>
               <div class="masonry">
-                ${meds.length ? meds.map(publicMedCard).join('') : `<div class="empty" style="grid-column:1/-1;">${illustration('mortar')}<div class="empty-title">Nothing matches</div>Try a different search or category.</div>`}
-              </div>`;
+                ${meds.length ? medsPage.items.map(publicMedCard).join('') : `<div class="empty" style="grid-column:1/-1;">${illustration('mortar')}<div class="empty-title">Nothing matches</div>Try a different search or category.</div>`}
+              </div>
+              ${paginationHtml('publicCatalog', medsPage.page, medsPage.totalPages)}`;
         }
 
         function publicMedicineDetail() {
@@ -4175,7 +4673,9 @@
         }
 
         function customerHome() {
+            if (isNativeAndroidApp()) return customerHomeMobile();
             const meds = filteredMedicines();
+            const medsPage = paginate(meds, 'customerShop', 12);
             const approvedPharmacies = DB.pharmacies.filter(p => p.status === 'approved');
             const hasRxResults = meds.some(m => m.prescription);
             const g = timeGreeting();
@@ -4251,9 +4751,92 @@
                 <span class="results-count" style="margin:0;">${meds.length} result${meds.length===1?'':'s'}</span>
               </div>
               <div class="masonry" style="margin-top:12px;">
-                ${meds.length ? meds.map(medCard).join('') : `<div class="empty" style="grid-column:1/-1;">${illustration('mortar')}<div class="empty-title">Nothing matches</div>Try a different search or category.</div>`}
+                ${meds.length ? medsPage.items.map(medCard).join('') : `<div class="empty" style="grid-column:1/-1;">${illustration('mortar')}<div class="empty-title">Nothing matches</div>Try a different search or category.</div>`}
               </div>
+              ${paginationHtml('customerShop', medsPage.page, medsPage.totalPages)}
             `;
+        }
+
+        function customerHomeMobile() {
+            const meds = filteredMedicines();
+            const medsPage = paginate(meds, 'customerShopMobile', 10);
+            const approvedPharmacies = DB.pharmacies.filter(p => p.status === 'approved');
+            const g = timeGreeting();
+            const first = currentCustomer().name.split(' ')[0];
+            const activeFilters = state.search.pharmacy !== 'All' || state.search.brand !== 'All' ||
+                state.search.priceMin || state.search.priceMax;
+            return `
+              <div style="margin-bottom:14px;">
+                <p class="section-sub" style="margin:0 0 2px;">${g.text},</p>
+                <h2 class="section-title" style="margin:0;font-size:23px;">${esc(first)} ${icon(g.ic,22)}</h2>
+              </div>
+              <div class="mobile-search-row">
+                <input type="text" id="searchInput" placeholder="Search remedies, pharmacies…" value="${esc(state.search.query)}" oninput="App.setSearchQuery(this.value)">
+                <button class="mobile-filter-btn" onclick="App.toggleFilterSheet()">${icon('quill',18)}${activeFilters?'<span class="mobile-filter-dot"></span>':''}</button>
+              </div>
+              <div class="mobile-cat-scroll">
+                <button class="mobile-cat-item ${state.search.category==='All'?'active':''}" onclick="App.setSearchField('category','All')">
+                  <div class="mobile-cat-ring">${icon('leaf',22)}</div><span>All</span>
+                </button>
+                ${CATEGORIES.map(c=>`<button class="mobile-cat-item ${state.search.category===c?'active':''}" onclick="App.setSearchField('category','${esc(c)}')">
+                  <div class="mobile-cat-ring">${icon(CAT_ICON[c]||'leaf',22)}</div><span>${esc(c)}</span>
+                </button>`).join('')}
+              </div>
+              <div class="mobile-section-head"><h3>Nearby Pharmacies</h3></div>
+              <div class="mobile-pharm-scroll">
+                ${approvedPharmacies.map(p=>`<div class="mobile-pharm-card">
+                    <div style="color:var(--terracotta);margin-bottom:6px;">${icon('building',20)}</div>
+                    <div style="font-family:var(--font-display);font-weight:600;font-size:13.5px;line-height:1.25;">${esc(p.name)}</div>
+                    <div class="hint" style="margin-top:4px;font-size:11px;">${esc(p.hours)}</div>
+                  </div>`).join('') || `<p class="hint">No pharmacies open yet.</p>`}
+              </div>
+              <div class="mobile-section-head"><h3>On the Shelf</h3><span class="results-count" style="margin:0;">${meds.length} item${meds.length===1?'':'s'}</span></div>
+              <div class="mobile-product-grid">
+                ${meds.length ? medsPage.items.map(medCard).join('') : `<div class="empty" style="grid-column:1/-1;">${illustration('mortar')}<div class="empty-title">Nothing matches</div>Try a different search or category.</div>`}
+              </div>
+              ${paginationHtml('customerShopMobile', medsPage.page, medsPage.totalPages)}
+              ${filterSheetHtml(approvedPharmacies)}
+            `;
+        }
+        function filterSheetHtml(approvedPharmacies) {
+            if (!state.mobileFilterSheetOpen) return '';
+            return `<div class="more-sheet-overlay" onclick="App.toggleFilterSheet()">
+                <div class="more-sheet" onclick="event.stopPropagation();" style="max-height:75vh;overflow-y:auto;">
+                  <div class="more-sheet-handle"></div>
+                  <div style="padding:0 10px;">
+                    <div class="field"><label>Pharmacy</label>
+                      <select onchange="App.setSearchField('pharmacy', this.value)">
+                        <option value="All" ${state.search.pharmacy==='All'?'selected':''}>All</option>
+                        ${approvedPharmacies.map(p=>`<option value="${p.id}" ${state.search.pharmacy===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}
+                      </select>
+                    </div>
+                    <div class="field"><label>Brand</label>
+                      <select onchange="App.setSearchField('brand', this.value)">
+                        <option value="All" ${state.search.brand==='All'?'selected':''}>All</option>
+                        ${allBrands().map(b=>`<option value="${esc(b)}" ${state.search.brand===b?'selected':''}>${esc(b)}</option>`).join('')}
+                      </select>
+                    </div>
+                    <div class="field"><label>Sort</label>
+                      <select onchange="App.setSearchField('sort', this.value)">
+                        <option value="newest" ${state.search.sort==='newest'?'selected':''}>Newest</option>
+                        <option value="popularity" ${state.search.sort==='popularity'?'selected':''}>Popular</option>
+                        <option value="priceLow" ${state.search.sort==='priceLow'?'selected':''}>Price Low</option>
+                        <option value="priceHigh" ${state.search.sort==='priceHigh'?'selected':''}>Price High</option>
+                        <option value="name" ${state.search.sort==='name'?'selected':''}>Name A–Z</option>
+                        <option value="brand" ${state.search.sort==='brand'?'selected':''}>Brand A–Z</option>
+                      </select>
+                    </div>
+                    <div class="field"><label>Price (₱)</label>
+                      <div class="price-range-inputs">
+                        <input type="number" min="0" inputmode="numeric" placeholder="Min" value="${esc(state.search.priceMin)}" oninput="App.setSearchField('priceMin', this.value)">
+                        <span>–</span>
+                        <input type="number" min="0" inputmode="numeric" placeholder="Max" value="${esc(state.search.priceMax)}" oninput="App.setSearchField('priceMax', this.value)">
+                      </div>
+                    </div>
+                    <button class="btn btn-outline btn-block" onclick="App.clearFilters();App.toggleFilterSheet()">Clear filters</button>
+                  </div>
+                </div>
+              </div>`;
         }
 
         function medCard(m) {
@@ -4286,7 +4869,8 @@
             if (items.length === 0) {
                 return `<h2 class="section-title">Wishlist</h2><div class="card empty">${illustration('mortar')}<div class="empty-title">Nothing saved</div>Tap the heart on any product to keep it here.<br><button class="btn btn-primary" style="margin-top:16px;" onclick="App.setView('customer','home')">Browse</button></div>`;
             }
-            return `<h2 class="section-title">Wishlist</h2><p class="section-sub">${items.length} item${items.length===1?'':'s'} saved.</p><div class="masonry">${items.map(medCard).join('')}</div>`;
+            const itemsPage = paginate(items, 'customerWishlist', 12);
+            return `<h2 class="section-title">Wishlist</h2><p class="section-sub">${items.length} item${items.length===1?'':'s'} saved.</p><div class="masonry">${itemsPage.items.map(medCard).join('')}</div>${paginationHtml('customerWishlist', itemsPage.page, itemsPage.totalPages)}`;
         }
 
         function customerMedicineDetail() {
@@ -4514,16 +5098,17 @@
             const myOrders = DB.orders.filter(o => o.customerId === state.session.customer).sort((a, b) => b.createdAt - a
                 .createdAt);
             if (myOrders.length === 0) return `<h2 class="section-title">My Orders</h2><div class="card empty">${illustration('mortar')}<div class="empty-title">No orders yet</div></div>`;
+            const ordersPage = paginate(myOrders, 'customerOrders');
             return `<h2 class="section-title">My Orders</h2>
                 <div class="card"><div class="table-wrap"><table>
                   <tr><th class="text-left">Order</th><th class="text-left">Pharmacy</th><th class="text-left">Fulfillment</th><th class="text-right">Total</th><th class="col-status">Status</th><th class="text-left">Placed</th><th class="col-actions">Actions</th></tr>
-                  ${myOrders.map(o=>`<tr>
+                  ${ordersPage.items.map(o=>`<tr>
                     <td class="text-left">#${o.id.replace('o','')}</td><td class="text-left">${esc(pharmacyName(o.pharmacyId))}</td>
                     <td class="text-left" style="text-transform:capitalize;">${o.fulfillment}</td><td class="text-right">${money(orderTotal(o))}</td>
                     <td class="col-status"><span class="badge badge-${o.status}">${STATUS_LABEL[o.status]}</span></td><td class="text-left">${fmtDate(o.createdAt)}</td>
                     <td class="col-actions"><button class="btn btn-outline btn-sm" onclick="App.openOrder('customer','${o.id}')">View</button></td>
                   </tr>`).join('')}
-                </table></div></div>`;
+                </table></div>${paginationHtml('customerOrders', ordersPage.page, ordersPage.totalPages)}</div>`;
         }
 
         /* Order items keep a price snapshot, so a delisted medicine still renders sensibly. */
@@ -4642,7 +5227,8 @@
             const uploadBtn =
                 `<button class="btn btn-outline" style="margin-bottom:16px;" onclick="App.newPrescriptionUpload()">${icon('quill',15)} Upload Rx</button>`;
             if (myThreads.length === 0) return `<h2 class="section-title">Messages</h2>${uploadBtn}<div class="card empty">${illustration('mortar')}<div class="empty-title">No messages</div></div>`;
-            return `<h2 class="section-title">Messages</h2>${uploadBtn}<div class="card">${myThreads.map(threadRow('customer')).join('')}</div>`;
+            const threadsPage = paginate(myThreads, 'customerMessages');
+            return `<h2 class="section-title">Messages</h2>${uploadBtn}<div class="card">${threadsPage.items.map(threadRow('customer')).join('')}</div>${paginationHtml('customerMessages', threadsPage.page, threadsPage.totalPages)}`;
         }
 
         function threadRow(role) {
@@ -4750,6 +5336,7 @@
                     filter === 'beingMade' ? (o.status === 'confirmed' || o.status === 'ready') :
                     o.status === filter)
                 .sort((a, b) => b.createdAt - a.createdAt);
+            const filteredPage = paginate(filtered, 'staffOrders');
             return `<h2 class="section-title">Workbench</h2><p class="section-sub">${esc(ph.name)}</p>
                 <div class="grid grid-stats" style="margin-bottom:18px;">
                   <div class="stat-jar"><div class="stat-num">${newOrders}</div><div class="stat-label">New Orders</div></div>
@@ -4765,13 +5352,13 @@
                 </div>
                 <div class="card">${filtered.length ? `<div class="table-wrap"><table>
                   <tr><th class="text-left">Order</th><th class="text-left">Customer</th><th class="text-left">Fulfillment</th><th class="text-right">Total</th><th class="col-status">Status</th><th class="text-left">Placed</th><th class="col-actions">Actions</th></tr>
-                  ${filtered.map(o=>`<tr>
+                  ${filteredPage.items.map(o=>`<tr>
                     <td class="text-left">#${o.id.replace('o','')}</td><td class="text-left">${esc(customerName(o.customerId))}</td>
                     <td class="text-left" style="text-transform:capitalize;">${o.fulfillment}</td><td class="text-right">${money(orderTotal(o))}</td>
                     <td class="col-status"><span class="badge badge-${o.status}">${STATUS_LABEL[o.status]}</span></td><td class="text-left">${fmtDate(o.createdAt)}</td>
                     <td class="col-actions"><button class="btn btn-outline btn-sm" onclick="App.openOrder('staff','${o.id}')">Manage</button><button class="btn btn-ghost btn-sm" title="Print invoice" onclick="App.printDocument('${o.id}','invoice')">🧾</button></td>
                   </tr>`).join('')}
-                </table></div>` : `<div class="empty">${illustration('mortar')}<div class="empty-title">Nothing here</div></div>`}</div>`;
+                </table></div>${paginationHtml('staffOrders', filteredPage.page, filteredPage.totalPages)}` : `<div class="empty">${illustration('mortar')}<div class="empty-title">Nothing here</div></div>`}</div>`;
         }
 
         function staffOrderDetail() {
@@ -4838,6 +5425,7 @@
             const all = pharmacyMedicines(ph.id);
             const f = state.staff.productFilter;
             const meds = all.filter(m => f === 'all' ? true : f === 'rx' ? m.prescription : productStatus(m) === f);
+            const medsPage = paginate(meds, 'staffListings');
             const counts = {
                 all: all.length,
                 active: all.filter(m => productStatus(m) === 'active').length,
@@ -4859,7 +5447,7 @@
                 </div>
                 <div class="card"><div class="table-wrap"><table>
                   <tr><th class="text-left">Product</th><th class="text-left">Category</th><th class="text-right">Price</th><th class="text-right">Stock</th><th class="col-status">Status</th><th class="col-actions">Actions</th></tr>
-                  ${meds.map(m=>{
+                  ${medsPage.items.map(m=>{
                     const st = productStatus(m);
                     return `<tr>
                       <td class="text-left"><div class="cell-with-thumb">${medPicture(m,48)}<span class="cell-text">${esc(m.name)} ${m.prescription?'<span class="badge badge-pending">Rx</span>':''}<br><span class="hint">${esc((m.description||'').slice(0,60))}${(m.description||'').length>60?'…':''}</span></span></div></td>
@@ -4874,7 +5462,7 @@
                       </td>
                     </tr>`;
                   }).join('') || `<tr><td colspan="6" class="hint">No products match this filter.</td></tr>`}
-                </table></div></div>
+                </table></div>${paginationHtml('staffListings', medsPage.page, medsPage.totalPages)}</div>
                 <p class="hint">Inactive products are hidden from shoppers. Prescription items stay visible but are not orderable.</p>`;
         }
 
@@ -4939,7 +5527,8 @@
             const ph = currentStaffPharmacy();
             const myThreads = DB.threads.filter(t => t.pharmacyId === ph.id);
             if (myThreads.length === 0) return `<h2 class="section-title">Messages</h2><div class="card empty">${illustration('mortar')}<div class="empty-title">No messages</div></div>`;
-            return `<h2 class="section-title">Messages</h2><div class="card">${myThreads.map(threadRow('staff')).join('')}</div>`;
+            const threadsPage = paginate(myThreads, 'staffMessages');
+            return `<h2 class="section-title">Messages</h2><div class="card">${threadsPage.items.map(threadRow('staff')).join('')}</div>${paginationHtml('staffMessages', threadsPage.page, threadsPage.totalPages)}`;
         }
 
         /* ---------- Inventory ---------- */
@@ -4951,6 +5540,7 @@
             const units = meds.reduce((s, m) => s + m.stock, 0);
             const value = meds.reduce((s, m) => s + m.stock * m.price, 0);
             const sorted = meds.slice().sort((a, b) => a.stock - b.stock);
+            const sortedPage = paginate(sorted, 'staffInventory');
             return `<h2 class="section-title">Inventory</h2><p class="section-sub">${esc(ph.name)} · stock levels and alerts</p>
                 <div class="grid grid-stats" style="margin-bottom:16px;">
                   <div class="stat-jar"><div class="stat-num">${meds.length}</div><div class="stat-label">Products</div></div>
@@ -4974,7 +5564,7 @@
                   <h3 style="margin-top:0;font-size:15px;">Stock ledger</h3>
                   <div class="table-wrap"><table>
                     <tr><th class="text-left">Product</th><th class="text-right">On hand</th><th class="text-right">Sold</th><th class="text-right">Alert at</th><th class="col-status">Status</th><th class="col-actions">Adjust</th></tr>
-                    ${sorted.map(m=>{
+                    ${sortedPage.items.map(m=>{
                       const st = m.stock === 0 ? 'out' : isLowStock(m) ? 'low' : 'ok';
                       const badge = st==='out' ? '<span class="badge badge-cancelled">Out</span>' : st==='low' ? '<span class="badge badge-pending">Low</span>' : '<span class="badge badge-active">In stock</span>';
                       return `<tr>
@@ -4992,6 +5582,7 @@
                       </tr>`;
                     }).join('') || `<tr><td colspan="6" class="hint">No products yet.</td></tr>`}
                   </table></div>
+                  ${paginationHtml('staffInventory', sortedPage.page, sortedPage.totalPages)}
                 </div>`;
         }
 
@@ -5001,6 +5592,7 @@
             const all = pharmacyReturns(ph.id).slice().sort((a, b) => b.at - a.at);
             const f = state.staff.returnFilter;
             const list = all.filter(r => f === 'all' ? true : r.status === f);
+            const listPage = paginate(list, 'staffReturns');
             const refunded = all.filter(r => r.status === 'refunded');
             const refundTotal = refunded.reduce((s, r) => s + (r.refundAmount || 0), 0);
             return `<h2 class="section-title">Returns &amp; Refunds</h2><p class="section-sub">${esc(ph.name)}</p>
@@ -5016,7 +5608,7 @@
                 </div>
                 <div class="card">${list.length ? `<div class="table-wrap"><table>
                   <tr><th class="text-left">Order</th><th class="text-left">Customer</th><th class="text-left">Reason</th><th class="text-right">Order total</th><th class="col-status">Status</th><th class="text-left">Requested</th><th class="col-actions">Actions</th></tr>
-                  ${list.map(r=>{
+                  ${listPage.items.map(r=>{
                     const o = order(r.orderId);
                     return `<tr>
                       <td class="text-left">#${r.orderId.replace('o','')}</td>
@@ -5033,14 +5625,14 @@
                       </td>
                     </tr>`;
                   }).join('')}
-                </table></div>` : `<div class="empty">${illustration('mortar')}<div class="empty-title">No return requests</div>Returns raised by customers or recorded from an order appear here.</div>`}</div>`;
+                </table></div>${paginationHtml('staffReturns', listPage.page, listPage.totalPages)}` : `<div class="empty">${illustration('mortar')}<div class="empty-title">No return requests</div>Returns raised by customers or recorded from an order appear here.</div>`}</div>`;
         }
 
         /* ---------- Notification management ---------- */
         function staffNotifications() {
             const ph = currentStaffPharmacy();
             const tpls = notifTemplates(ph.id);
-            const log = DB.notificationLog.filter(l => l.pharmacyId === ph.id).slice(0, 25);
+            const log = DB.notificationLog.filter(l => l.pharmacyId === ph.id);
             const custIds = pharmacyCustomerIds(ph.id);
             const compose = state.staff.notifCompose;
             return `<h2 class="section-title">Notices</h2><p class="section-sub">Automated messages sent to your customers.</p>
@@ -5081,15 +5673,15 @@
                 </div>
                 <div class="card">
                   <h3 style="margin-top:0;font-size:15px;">Sent log</h3>
-                  ${log.length ? `<div class="table-wrap"><table>
+                  ${log.length ? (() => { const logPage = paginate(log, 'staffNoticesLog'); return `<div class="table-wrap"><table>
                     <tr><th class="text-left">When</th><th class="text-left">Type</th><th class="text-left">To</th><th class="text-left">Message</th></tr>
-                    ${log.map(l=>`<tr>
+                    ${logPage.items.map(l=>`<tr>
                       <td class="text-left">${fmtDate(l.at)}</td>
                       <td class="text-left"><span class="badge ${l.kind==='manual'?'badge-confirmed':'badge-active'}">${l.kind}</span></td>
                       <td class="text-left">${esc(customerName(l.customerId))}</td>
                       <td class="text-left">${esc(l.text)}</td>
                     </tr>`).join('')}
-                  </table></div>` : `<p class="hint">Nothing sent yet.</p>`}
+                  </table></div>${paginationHtml('staffNoticesLog', logPage.page, logPage.totalPages)}`; })() : `<p class="hint">Nothing sent yet.</p>`}
                 </div>`;
         }
 
@@ -5194,12 +5786,13 @@
                 </div>
                 <div class="card"><div class="table-wrap"><table>
                   <tr><th class="text-left">Order</th><th class="text-left">Customer</th><th class="col-status">Status</th><th class="text-right">Total</th><th class="text-left">Date</th></tr>
-                  ${orders.sort((a,b)=>b.createdAt-a.createdAt).map(o=>`<tr>
+                  ${(() => { const sortedOrders = orders.slice().sort((a,b)=>b.createdAt-a.createdAt);
+                     const ordersPage = paginate(sortedOrders, 'staffSalesOrders');
+                     return ordersPage.items.map(o=>`<tr>
                     <td class="text-left">#${o.id.replace('o','')}</td><td class="text-left">${esc(customerName(o.customerId))}</td>
                     <td class="col-status"><span class="badge badge-${o.status}">${STATUS_LABEL[o.status]}</span></td>
                     <td class="text-right">${money(orderTotal(o))}</td><td class="text-left">${fmtDate(o.createdAt)}</td>
-                  </tr>`).join('')}
-                </table></div></div>`;
+                  </tr>`).join('') + '</table></div>' + paginationHtml('staffSalesOrders', ordersPage.page, ordersPage.totalPages); })()}</div>`;
         }
 
         function staffProfile() {
@@ -5227,6 +5820,7 @@
             const ph = currentStaffPharmacy();
             const me = currentStaff();
             const team = pharmacyStaffList(ph.id);
+            const teamPage = paginate(team, 'staffTeam');
             const owners = pharmacyOwners(ph.id);
             const canAddCoAdmin = owners.length < 2;
             const addingOrEditing = state.staff.addingStaff || state.staff.editStaffId;
@@ -5270,7 +5864,7 @@
                   ${formHtml}
                   <div class="table-wrap"><table>
                     <tr><th class="text-left">Name</th><th class="text-left">Email</th><th class="col-status">Role</th><th class="col-status">Status</th><th class="col-actions">Actions</th></tr>
-                    ${team.map(s=>`<tr>
+                    ${teamPage.items.map(s=>`<tr>
                       <td class="text-left">${esc(s.name)}${s.id===me.id?' <span class="hint">(you)</span>':''}</td>
                       <td class="text-left">${esc(s.email)}</td>
                       <td class="col-status"><span class="badge ${s.isOwner?'badge-approved':'badge-active'}">${s.isOwner?'Admin':'Staff'}</span></td>
@@ -5282,6 +5876,7 @@
                       </td>
                     </tr>`).join('')}
                   </table></div>
+                  ${paginationHtml('staffTeam', teamPage.page, teamPage.totalPages)}
                   <p class="hint" style="margin-top:10px;">Each pharmacy can have up to two admins. The last remaining admin of a pharmacy can't be removed here — contact the site admin if ownership needs to change.</p>
                 </div>`;
         }
@@ -5307,8 +5902,9 @@
                 return `<h2 class="section-title">Registry</h2>
                 <div class="card empty">${illustration('mortar')}<div class="empty-title">All caught up</div>No pending registrations.</div>`;
             }
+            const pendingPage = paginate(pending, 'adminApprovals');
             return `<h2 class="section-title">Registry</h2><p class="section-sub">New pharmacies waiting for approval.</p>
-                <div class="card">${pending.map(s=>{
+                <div class="card">${pendingPage.items.map(s=>{
                   const ph = pharmacy(s.pharmacyId);
                   return `<div class="row-between" style="padding:15px 0;border-bottom:1px solid var(--stone);">
                     <div style="display:flex;gap:12px;align-items:flex-start;">
@@ -5325,16 +5921,19 @@
                       <button class="btn btn-danger btn-sm" onclick="App.rejectRegistration('${s.id}')">Reject</button>
                     </div>
                   </div>`;
-                }).join('')}</div>`;
+                }).join('')}</div>
+                ${paginationHtml('adminApprovals', pendingPage.page, pendingPage.totalPages)}`;
         }
 
         function adminAccounts() {
+            const custPage = paginate(DB.customers, 'adminCustomers');
+            const staffPage = paginate(DB.staff, 'adminStaff');
             return `<h2 class="section-title">Accounts</h2>
                 <div class="card">
                   <h3 style="margin-top:0;font-size:15px;">Customers</h3>
                   <div class="table-wrap"><table>
                     <tr><th class="text-left">Name</th><th class="text-left">Email</th><th class="text-right">Orders</th><th class="col-status">Status</th><th class="col-actions">Actions</th></tr>
-                    ${DB.customers.map(c=>{
+                    ${custPage.items.map(c=>{
                       const editing = state.admin.editCustomerId === c.id;
                       const orders = DB.orders.filter(o => o.customerId === c.id).length;
                       if (editing) return `<tr><td colspan="5">
@@ -5363,6 +5962,7 @@
                     </tr>`;
                     }).join('')}
                   </table></div>
+                  ${paginationHtml('adminCustomers', custPage.page, custPage.totalPages)}
                 </div>
                 ${adminAccountsPanel()}
                 <div class="card">
@@ -5370,7 +5970,7 @@
                   <p class="hint">Pharmacy Admins create their own staff logins from their Team tab — this list is read access for oversight.</p>
                   <div class="table-wrap"><table>
                     <tr><th class="text-left">Person</th><th class="text-left">Pharmacy</th><th class="col-status">Role</th><th class="col-status">Status</th><th class="col-status">Pharmacy</th><th class="col-actions">Actions</th></tr>
-                    ${DB.staff.map(s=>{
+                    ${staffPage.items.map(s=>{
                       const ph = pharmacy(s.pharmacyId);
                       const phStatus = ph ? ph.status : 'orphaned';
                       return `<tr>
@@ -5386,12 +5986,14 @@
                       </tr>`;
                     }).join('')}
                   </table></div>
+                  ${paginationHtml('adminStaff', staffPage.page, staffPage.totalPages)}
                 </div>`;
         }
 
         /* Platform administrators manage each other here — the last account can never be deleted. */
         function adminAccountsPanel() {
             const me = state.session.admin;
+            const adminsPage = paginate(DB.admins, 'siteAdmins');
             return `<div class="card">
                 <div class="row-between">
                   <h3 style="margin:0;font-size:15px;">${icon('cross',15)} Administrators</h3>
@@ -5407,7 +6009,7 @@
                   </div>` : ''}
                 <div class="table-wrap"><table>
                   <tr><th class="text-left">Name</th><th class="text-left">Email</th><th class="col-status">Role</th><th class="col-actions">Actions</th></tr>
-                  ${DB.admins.map(a=>{
+                  ${adminsPage.items.map(a=>{
                     if (state.admin.editAdminId === a.id) return `<tr><td colspan="4">
                       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
                         <div class="field" style="flex:1;min-width:160px;margin-bottom:0;"><label>Name</label><input type="text" id="admName" value="${esc(a.name)}"></div>
@@ -5428,6 +6030,7 @@
                     </tr>`;
                   }).join('')}
                 </table></div>
+                ${paginationHtml('siteAdmins', adminsPage.page, adminsPage.totalPages)}
               </div>`;
         }
 
@@ -5470,6 +6073,8 @@
            ===================================================== */
         function adminContent() {
             const b = DB.homepageBanner;
+            const promosPage = paginate(DB.promotions, 'adminPromotions');
+            const faqsPage = paginate(DB.faqs, 'adminFaqs');
             return `<h2 class="section-title">Content</h2>
                 <p class="section-sub">Manage the homepage banner, promotions, and static pages shown to every visitor.</p>
 
@@ -5505,7 +6110,7 @@
                       <button class="btn btn-primary btn-sm" onclick="App.addPromo()">Add</button>
                       <button class="btn btn-ghost btn-sm" onclick="App.cancelPromoForm()">Cancel</button>
                     </div>` : ''}
-                  ${DB.promotions.length ? DB.promotions.map(p=>{
+                  ${DB.promotions.length ? promosPage.items.map(p=>{
                     if (state.admin.editPromoId === p.id) return `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;padding:10px 0;border-bottom:1px solid var(--stone);">
                         <div class="field" style="flex:1;min-width:160px;margin-bottom:0;"><label>Title</label><input type="text" id="editPromoTitle" value="${esc(p.title)}"></div>
                         <div class="field" style="flex:2;min-width:220px;margin-bottom:0;"><label>Text</label><input type="text" id="editPromoText" value="${esc(p.text)}"></div>
@@ -5524,6 +6129,7 @@
                         </div>
                       </div>`;
                   }).join('') : `<p class="hint">No promotions yet.</p>`}
+                  ${paginationHtml('adminPromotions', promosPage.page, promosPage.totalPages)}
                 </div>
 
                 <div class="card">
@@ -5559,7 +6165,7 @@
                       <button class="btn btn-primary btn-sm" onclick="App.addFaq()">Add</button>
                       <button class="btn btn-ghost btn-sm" onclick="App.cancelFaqForm()">Cancel</button>
                     </div>` : ''}
-                  ${DB.faqs.length ? DB.faqs.map(f=>{
+                  ${DB.faqs.length ? faqsPage.items.map(f=>{
                     if (state.admin.editFaqId === f.id) return `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;padding:10px 0;border-bottom:1px solid var(--stone);">
                         <div class="field" style="flex:1;min-width:200px;margin-bottom:0;"><label>Question</label><input type="text" id="editFaqQ" value="${esc(f.q)}"></div>
                         <div class="field" style="flex:1;min-width:200px;margin-bottom:0;"><label>Answer</label><input type="text" id="editFaqA" value="${esc(f.a)}"></div>
@@ -5574,6 +6180,7 @@
                         </div>
                       </div>`;
                   }).join('') : `<p class="hint">No FAQs yet.</p>`}
+                  ${paginationHtml('adminFaqs', faqsPage.page, faqsPage.totalPages)}
                 </div>`;
         }
 
@@ -5584,24 +6191,26 @@
             const q = state.admin.auditFilter.trim().toLowerCase();
             const rows = DB.auditLog.filter(e => !q || e.action.toLowerCase().includes(q) || e.actor.toLowerCase()
                 .includes(q));
+            const rowsPage = paginate(rows, 'adminAudit');
             return `<h2 class="section-title">Audit Trail</h2>
                 <p class="section-sub">A running record of administrative and account-management activity across the platform.</p>
                 <div class="field" style="max-width:320px;"><label>Filter</label><input type="text" placeholder="Search actor or action…" value="${esc(state.admin.auditFilter)}" oninput="App.setAuditFilter(this.value)"></div>
                 <div class="card">${rows.length ? `<div class="table-wrap"><table>
                   <tr><th class="text-left">Time</th><th class="text-left">Actor</th><th class="text-left">Action</th></tr>
-                  ${rows.map(e=>`<tr>
+                  ${rowsPage.items.map(e=>`<tr>
                     <td class="text-left" style="white-space:nowrap;">${fmtDate(e.at)}</td>
                     <td class="text-left">${esc(e.actor)}</td>
                     <td class="text-left">${esc(e.action)}</td>
                   </tr>`).join('')}
-                </table></div>` : `<div class="empty">${illustration('mortar')}<div class="empty-title">No activity yet</div>Actions taken across the platform will appear here.</div>`}</div>`;
+                </table></div>${paginationHtml('adminAudit', rowsPage.page, rowsPage.totalPages)}` : `<div class="empty">${illustration('mortar')}<div class="empty-title">No activity yet</div>Actions taken across the platform will appear here.</div>`}</div>`;
         }
 
         function adminCatalog() {
+            const medsPage = paginate(DB.medicines, 'adminCatalog');
             return `<h2 class="section-title">Herbal Index</h2><p class="section-sub">Platform-wide catalog — manage prescriptions and remove items.</p>
                 <div class="card"><div class="table-wrap"><table>
                   <tr><th class="text-left">Name</th><th class="text-left">Pharmacy</th><th class="text-left">Category</th><th class="text-right">Price</th><th class="col-status">Type</th><th class="col-actions">Actions</th></tr>
-                  ${DB.medicines.map(m=>{
+                  ${medsPage.items.map(m=>{
                     const ph = pharmacy(m.pharmacyId);
                     return `<tr>
                       <td class="text-left"><div class="cell-with-thumb">${medPicture(m,48)}<span class="cell-text">${esc(m.name)}</span></div></td>
@@ -5615,24 +6224,27 @@
                       </td>
                     </tr>`;
                   }).join('')}
-                </table></div></div>`;
+                </table></div>${paginationHtml('adminCatalog', medsPage.page, medsPage.totalPages)}</div>`;
         }
 
         function adminOrders() {
+            const ordersSorted = DB.orders.slice().sort((a,b)=>b.createdAt-a.createdAt);
+            const ordersPage = paginate(ordersSorted, 'adminOrders');
             return `<h2 class="section-title">All Orders</h2>
                 <div class="card"><div class="table-wrap"><table>
                   <tr><th class="text-left">Order</th><th class="text-left">Customer</th><th class="text-left">Pharmacy</th><th class="text-right">Total</th><th class="text-left">Payment</th><th class="col-status">Status</th><th class="text-left">Placed</th></tr>
-                  ${DB.orders.slice().sort((a,b)=>b.createdAt-a.createdAt).map(o=>`<tr>
+                  ${ordersPage.items.map(o=>`<tr>
                     <td class="text-left">#${o.id.replace('o','')}</td><td class="text-left">${esc(customerName(o.customerId))}</td><td class="text-left">${esc(pharmacyName(o.pharmacyId))}</td>
                     <td class="text-right">${money(orderTotal(o))}</td><td class="text-left"><span class="pay-summary">${orderPaymentIcon(o)} ${esc(orderPaymentLabel(o))}</span></td><td class="col-status"><span class="badge badge-${o.status}">${STATUS_LABEL[o.status]}</span></td><td class="text-left">${fmtDate(o.createdAt)}</td>
                   </tr>`).join('')}
-                </table></div></div>`;
+                </table></div>${paginationHtml('adminOrders', ordersPage.page, ordersPage.totalPages)}</div>`;
         }
 
         function adminFlags() {
             if (DB.flags.length === 0) return `<h2 class="section-title">Flags</h2><div class="card empty">${illustration('mortar')}<div class="empty-title">No flags</div></div>`;
+            const flagsPage = paginate(DB.flags, 'adminFlags');
             return `<h2 class="section-title">Flags</h2>
-                <div class="card">${DB.flags.map(f=>{
+                <div class="card">${flagsPage.items.map(f=>{
                   const target = f.targetType==='customer' ? customer(f.targetId) : staffMember(f.targetId);
                   return `<div class="row-between" style="padding:15px 0;border-bottom:1px solid var(--stone);">
                     <div>
@@ -5644,7 +6256,8 @@
                       ${f.status==='open' ? `<button class="btn btn-sage btn-sm" onclick="App.resolveFlag('${f.id}')">Resolve</button>` : ''}
                     </div>
                   </div>`;
-                }).join('')}</div>`;
+                }).join('')}</div>
+                ${paginationHtml('adminFlags', flagsPage.page, flagsPage.totalPages)}`;
         }
 
         function avgResponseHours() {
@@ -5724,9 +6337,28 @@
 
             setAuthView(view) { state.authView = view;
                 update(); },
-            setView(role, view) { state[role].view = view;
+            setView(role, view) {
+                if (isNativeAndroidApp() && state[role].view !== view) {
+                    state.navLoading = true;
+                    update();
+                    setTimeout(() => {
+                        state[role].view = view;
+                        state.navLoading = false;
+                        window.scrollTo({ top: 0 });
+                        update();
+                    }, 220);
+                    return;
+                }
+                state[role].view = view;
+                update();
+            },
+            toggleFilterSheet() { state.mobileFilterSheetOpen = !state.mobileFilterSheetOpen;
+                update(); },
+            setPage(key, page) { state.pagination[key] = page;
                 update(); },
             setStaffFilter(f) { state.staff.orderFilter = f;
+                update(); },
+            toggleMoreSheet() { state.mobileMoreOpen = !state.mobileMoreOpen;
                 update(); },
 
 
@@ -5846,7 +6478,7 @@
                 if (state.activeRole) state.session[state.activeRole] = null;
                 state.activeRole = null;
                 state.authView = 'login';
-                state.publicView = 'landing';
+                state.publicView = isNativeAndroidApp() ? 'auth' : 'landing';
                 state.publicMedId = null;
                 update();
             },
@@ -7235,6 +7867,8 @@
         };
 
         (async function boot() {
+            console.log('[Boot] location.origin =', location.origin, '| isNativeAndroidApp() =', isNativeAndroidApp());
+            if (isNativeAndroidApp() && !state.activeRole) state.publicView = 'auth';
             setupCapacitorAuthListener();
             if (sbEnabled()) {
                 // Upload built-in accounts if the remote project is still empty
@@ -7265,6 +7899,24 @@
                 await checkGcashReturn();
             }
             update();
+            // Fade out our branded boot screen now that real content is
+            // ready — works immediately regardless of native splash image
+            // asset setup, since it's just HTML/CSS we fully control.
+            const bootEl = document.getElementById('bootSplash');
+            if (bootEl) {
+                bootEl.classList.add('fade-out');
+                setTimeout(() => bootEl.remove(), 400);
+            }
+            // Also hide the native Capacitor splash screen (belt-and-braces
+            // — same bridge-loading race as the auth listener, so poll
+            // briefly rather than risk missing it and leaving it stuck).
+            (function hideSplash(tries) {
+                if (window.CapSplash && window.CapSplash.hide) {
+                    window.CapSplash.hide().catch(() => {});
+                    return;
+                }
+                if (tries < 60) setTimeout(() => hideSplash(tries + 1), 50);
+            })(0);
         })();
     </script>
 </body>
