@@ -5060,89 +5060,73 @@
             const subtotal = o.items.reduce((s, it) => s + it.price * it.qty, 0);
             const deliveryFee = o.fulfillment === 'delivery' ? orderTotal(o) - subtotal : 0;
             const total = orderTotal(o);
-            return `<div class="card" style="max-width:600px;margin:40px auto;padding:40px;">
-                <div style="text-align:center;margin-bottom:30px;">
-                    <div style="display:inline-flex;align-items:center;gap:12px;margin-bottom:12px;">
-                        ${icon('leaf',40)}
-                        <h1 style="margin:0;font-size:28px;font-family:var(--font-display);color:var(--sage-dark);">CarePoint</h1>
+            return `<div class="card" style="max-width:500px;margin:20px auto;padding:24px;">
+                <div style="text-align:center;margin-bottom:20px;">
+                    <div style="width:50px;height:50px;margin:0 auto 10px;border-radius:50%;background:var(--sage-tint);display:flex;align-items:center;justify-content:center;">
+                        <span style="font-size:28px;">✓</span>
                     </div>
-                    <div style="width:60px;height:60px;margin:0 auto 12px;border-radius:50%;background:var(--sage-tint);display:flex;align-items:center;justify-content:center;">
-                        <span style="font-size:32px;">✓</span>
-                    </div>
-                    <h2 style="margin:0 0 8px;color:var(--sage-dark);font-size:24px;">Order Confirmed!</h2>
-                    <p style="margin:0;color:var(--walnut-soft);font-size:15px;">Thank you for your order, ${esc(cust.name.split(' ')[0])}.</p>
+                    <h2 style="margin:0 0 4px;color:var(--sage-dark);font-size:20px;">Order Confirmed!</h2>
+                    <p style="margin:0;color:var(--walnut-soft);font-size:14px;">Thank you, ${esc(cust.name.split(' ')[0])}.</p>
                 </div>
 
-                <div style="border-top:2px dashed var(--stone);border-bottom:2px dashed var(--stone);padding:20px 0;margin:24px 0;">
-                    <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
-                        <span style="font-weight:600;color:var(--walnut);">Order Number</span>
-                        <span style="font-family:monospace;font-size:15px;">#${o.id.replace('o','')}</span>
+                <div style="border-top:1px solid var(--stone);border-bottom:1px solid var(--stone);padding:12px 0;margin:16px 0;">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:14px;">
+                        <span style="font-weight:600;color:var(--walnut);">Order #</span>
+                        <span style="font-family:monospace;">#${o.id.replace('o','')}</span>
                     </div>
-                    <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
-                        <span style="font-weight:600;color:var(--walnut);">Date</span>
-                        <span>${fmtDate(o.createdAt)}</span>
-                    </div>
-                    <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:14px;">
                         <span style="font-weight:600;color:var(--walnut);">Pharmacy</span>
                         <span>${esc(ph ? ph.name : 'CarePoint')}</span>
                     </div>
-                    <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:14px;">
                         <span style="font-weight:600;color:var(--walnut);">Fulfillment</span>
                         <span style="text-transform:capitalize;">${o.fulfillment}</span>
                     </div>
-                    ${o.fulfillment === 'delivery' ? `<div style="display:flex;justify-content:space-between;margin-bottom:12px;">
-                        <span style="font-weight:600;color:var(--walnut);">Delivery Address</span>
-                        <span style="text-align:right;max-width:60%;">${esc(orderAddressText(o))}</span>
-                    </div>` : `<div style="display:flex;justify-content:space-between;margin-bottom:12px;">
-                        <span style="font-weight:600;color:var(--walnut);">Pickup Location</span>
-                        <span style="text-align:right;max-width:60%;">${esc(ph ? ph.location : '')}</span>
-                    </div>`}
-                    <div style="display:flex;justify-content:space-between;">
-                        <span style="font-weight:600;color:var(--walnut);">Payment Method</span>
+                    <div style="display:flex;justify-content:space-between;font-size:14px;">
+                        <span style="font-weight:600;color:var(--walnut);">Payment</span>
                         <span>${orderPaymentIcon(o)} ${esc(orderPaymentLabel(o))}</span>
                     </div>
                 </div>
 
-                <div style="margin:24px 0;">
-                    <h3 style="margin:0 0 16px;font-size:16px;color:var(--walnut);">Order Items</h3>
+                <div style="margin:16px 0;">
+                    <h3 style="margin:0 0 12px;font-size:15px;color:var(--walnut);">Items</h3>
                     ${o.items.map(it => {
                         const m = orderItemMed(it);
-                        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--stone);">
-                            <div style="display:flex;align-items:center;gap:12px;flex:1;">
-                                ${medPicture(m, 48)}
+                        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--stone);">
+                            <div style="display:flex;align-items:center;gap:10px;flex:1;">
+                                ${medPicture(m, 40)}
                                 <div>
-                                    <div style="font-weight:500;color:var(--walnut);">${esc(m.name)}</div>
-                                    <div style="font-size:13px;color:var(--walnut-soft);">Qty: ${it.qty}</div>
+                                    <div style="font-weight:500;font-size:14px;color:var(--walnut);">${esc(m.name)}</div>
+                                    <div style="font-size:12px;color:var(--walnut-soft);">Qty: ${it.qty}</div>
                                 </div>
                             </div>
-                            <div style="font-weight:600;color:var(--walnut);white-space:nowrap;margin-left:16px;">${money(it.price * it.qty)}</div>
+                            <div style="font-weight:600;font-size:14px;color:var(--walnut);white-space:nowrap;margin-left:12px;">${money(it.price * it.qty)}</div>
                         </div>`;
                     }).join('')}
                 </div>
 
-                <div style="border-top:2px solid var(--stone);padding-top:20px;margin-top:24px;">
-                    <div style="display:flex;justify-content:space-between;margin-bottom:12px;font-size:15px;">
+                <div style="border-top:1px solid var(--stone);padding-top:12px;margin-top:16px;">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:14px;">
                         <span>Subtotal</span>
                         <span>${money(subtotal)}</span>
                     </div>
-                    ${deliveryFee > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:12px;font-size:15px;">
+                    ${deliveryFee > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:14px;">
                         <span>Delivery Fee</span>
                         <span>${money(deliveryFee)}</span>
                     </div>` : ''}
-                    <div style="display:flex;justify-content:space-between;padding-top:12px;border-top:1px solid var(--stone);">
-                        <span style="font-weight:700;font-size:18px;color:var(--walnut);">Total</span>
-                        <span style="font-weight:700;font-size:18px;color:var(--sage-dark);">${money(total)}</span>
+                    <div style="display:flex;justify-content:space-between;padding-top:8px;border-top:1px solid var(--stone);">
+                        <span style="font-weight:700;font-size:16px;color:var(--walnut);">Total</span>
+                        <span style="font-weight:700;font-size:16px;color:var(--sage-dark);">${money(total)}</span>
                     </div>
                 </div>
 
-                <div style="margin-top:32px;padding:20px;background:var(--sage-tint);border-radius:8px;text-align:center;">
-                    <p style="margin:0 0 8px;font-size:14px;color:var(--walnut-soft);">A confirmation email has been sent to</p>
-                    <p style="margin:0 0 16px;font-weight:600;color:var(--walnut);">${esc(cust.email)}</p>
-                    <p style="margin:0;font-size:13px;color:var(--walnut-soft);">The pharmacy will prepare your order shortly.</p>
+                <div style="margin-top:20px;padding:14px;background:var(--sage-tint);border-radius:6px;text-align:center;">
+                    <p style="margin:0 0 6px;font-size:13px;color:var(--walnut-soft);">Confirmation sent to ${esc(cust.email)}</p>
+                    <p style="margin:0;font-size:12px;color:var(--walnut-soft);">The pharmacy will prepare your order shortly.</p>
                 </div>
 
-                <div style="margin-top:32px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-                    <button class="btn btn-primary" onclick="App.setView('customer','orders')">View All Orders</button>
+                <div style="margin-top:20px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+                    <button class="btn btn-primary" onclick="App.setView('customer','orders')">View Orders</button>
                     <button class="btn btn-outline" onclick="App.setView('customer','home')">Continue Shopping</button>
                 </div>
             </div>`;
