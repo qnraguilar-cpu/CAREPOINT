@@ -21,9 +21,7 @@
 
     <style>
         :root {
-            --terracotta: #B86A45;
-            --terracotta-deep: #8B4F2F;
-            --ink: #1A1210;
+            --terracotta: #C17F59;
             --terracotta-dark: #A3623F;
             --terracotta-tint: #F3E2D6;
             --sage: #7D9B76;
@@ -67,10 +65,10 @@
             height: auto;
             overflow-x: hidden;
             overflow-y: auto;
-            background: linear-gradient(180deg, #1A1210 0%, #2C1E16 40%, #3E2B22 70%, #FAF7F2 100%);
-            background-image: radial-gradient(rgba(201,127,89,0.08) 1px, transparent 1px);
+            background: var(--parchment);
+            background-image: radial-gradient(rgba(44, 30, 22, 0.025) 1px, transparent 1px);
             background-size: 14px 14px;
-            color: #FAF7F2;
+            color: var(--walnut);
             font-family: var(--font-body);
             font-size: 16px;
             line-height: 1.6;
@@ -93,15 +91,10 @@
         h1,
         h2,
         h3 {
-            font-family: var(--font-display); color: #FAF7F2; font-weight: 700; line-height: 1.05; letter-spacing: -0.05em;
+            font-family: var(--font-display);
         }
         ::selection {
             background: var(--yarrow-tint);
-        }
-
-
-        .hero-gradient-overlay {
-            background: linear-gradient(135deg, rgba(26,18,16,0.88) 0%, rgba(44,30,22,0.65) 60%, rgba(201,127,89,0.25) 100%);
         }
 
         .fly-particle {
@@ -7662,19 +7655,7 @@
                     .totals div{display:flex;justify-content:space-between;padding:4px 0;}
                     .grand{border-top:2px solid #2C1E16;font-weight:700;margin-top:6px;padding-top:8px;}
                     .foot{margin-top:34px;font-size:11.5px;color:#6E5D4F;border-top:1px solid #E8E3DD;padding-top:10px;}
-          
-        .glass-nav {
-            position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
-            backdrop-filter: blur(20px) saturate(140%);
-            -webkit-backdrop-filter: blur(20px) saturate(140%);
-            background: rgba(26,18,16,0.72);
-            border-bottom: 1px solid rgba(201,127,89,0.15);
-            padding: 18px 5%; display: flex; align-items: center; justify-content: space-between;
-        }
-        .glass-nav a { color: #FAF7F2; font-family: var(--font-body); font-weight: 500; letter-spacing: 0.05em; font-size: 13px; text-transform: uppercase; }
-        .glass-nav .logo { font-family: var(--font-display); font-size: 28px; letter-spacing: -0.04em; font-weight: 600; }
-
-        </style></head><body>
+                  </style></head><body>
                   <div class="head">
                     <div>
                       <h1>${esc(ph ? ph.name : DB.settings.platformName)}</h1>
