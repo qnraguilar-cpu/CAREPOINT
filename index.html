@@ -4141,12 +4141,10 @@
                 const ph = currentStaffPharmacy();
                 const pending = DB.orders.filter(o => o.pharmacyId === ph.id && o.status === 'pending').length;
                 const openMsgs = unreadForStaffPharmacy(ph.id);
-                const lowStock = lowStockMedicines(ph.id).length + outOfStockMedicines(ph.id).length;
                 const openReturns = pharmacyReturns(ph.id).filter(r => r.status === 'requested').length;
                 return [
                     ['orders', 'Workbench', pending],
                     ['listings', 'The Shelf', 0],
-                    ['inventory', 'Inventory', lowStock],
                     ['returns', 'Returns', openReturns],
                     ['messages', 'Counter', openMsgs],
                     ['sales', 'Sales', 0],
@@ -4581,7 +4579,8 @@
 
         function customerRegisterForm() {
             return `
-              <div class="field"><label>Full Name</label><input type="text" id="regName" placeholder="Juan Dela Cruz"></div>
+              <div class="field"><label>First Name</label><input type="text" id="regFirstName" placeholder="Juan"></div>
+              <div class="field"><label>Last Name</label><input type="text" id="regLastName" placeholder="Dela Cruz"></div>
               <div class="field"><label>Email</label><input type="email" id="regEmail" placeholder="you@example.com"></div>
               <div class="field"><label>Password</label><input type="password" id="regPassword" placeholder="Create a password"></div>
               <button class="btn btn-primary btn-block" onclick="App.registerCustomer()">Create Account</button>
@@ -4626,6 +4625,7 @@
             if (v === 'wishlist') return customerWishlist();
             if (v === 'cart') return customerCart();
             if (v === 'checkout') return customerCheckout();
+            if (v === 'receipt') return customerReceipt();
             if (v === 'orders') return customerOrders();
             if (v === 'orderDetail') return customerOrderDetail();
             if (v === 'messages') return customerMessages();
@@ -5049,6 +5049,103 @@
                 </div>`;
         }
 
+        /* ---------- Receipt ---------- */
+        function customerReceipt() {
+            const o = order(state.customer.orderId);
+            if (!o) return `<div class="empty">Order not found.</div>`;
+            const ph = pharmacy(o.pharmacyId);
+            const cust = currentCustomer();
+            const subtotal = o.items.reduce((s, it) => s + it.price * it.qty, 0);
+            const deliveryFee = o.fulfillment === 'delivery' ? orderTotal(o) - subtotal : 0;
+            const total = orderTotal(o);
+            return `<div class="card" style="max-width:600px;margin:40px auto;padding:40px;">
+                <div style="text-align:center;margin-bottom:30px;">
+                    <div style="display:inline-flex;align-items:center;gap:12px;margin-bottom:12px;">
+                        ${icon('leaf',40)}
+                        <h1 style="margin:0;font-size:28px;font-family:var(--font-display);color:var(--sage-dark);">CarePoint</h1>
+                    </div>
+                    <div style="width:60px;height:60px;margin:0 auto 12px;border-radius:50%;background:var(--sage-tint);display:flex;align-items:center;justify-content:center;">
+                        <span style="font-size:32px;">✓</span>
+                    </div>
+                    <h2 style="margin:0 0 8px;color:var(--sage-dark);font-size:24px;">Order Confirmed!</h2>
+                    <p style="margin:0;color:var(--walnut-soft);font-size:15px;">Thank you for your order, ${esc(cust.name.split(' ')[0])}.</p>
+                </div>
+
+                <div style="border-top:2px dashed var(--stone);border-bottom:2px dashed var(--stone);padding:20px 0;margin:24px 0;">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
+                        <span style="font-weight:600;color:var(--walnut);">Order Number</span>
+                        <span style="font-family:monospace;font-size:15px;">#${o.id.replace('o','')}</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
+                        <span style="font-weight:600;color:var(--walnut);">Date</span>
+                        <span>${fmtDate(o.createdAt)}</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
+                        <span style="font-weight:600;color:var(--walnut);">Pharmacy</span>
+                        <span>${esc(ph ? ph.name : 'CarePoint')}</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
+                        <span style="font-weight:600;color:var(--walnut);">Fulfillment</span>
+                        <span style="text-transform:capitalize;">${o.fulfillment}</span>
+                    </div>
+                    ${o.fulfillment === 'delivery' ? `<div style="display:flex;justify-content:space-between;margin-bottom:12px;">
+                        <span style="font-weight:600;color:var(--walnut);">Delivery Address</span>
+                        <span style="text-align:right;max-width:60%;">${esc(orderAddressText(o))}</span>
+                    </div>` : `<div style="display:flex;justify-content:space-between;margin-bottom:12px;">
+                        <span style="font-weight:600;color:var(--walnut);">Pickup Location</span>
+                        <span style="text-align:right;max-width:60%;">${esc(ph ? ph.location : '')}</span>
+                    </div>`}
+                    <div style="display:flex;justify-content:space-between;">
+                        <span style="font-weight:600;color:var(--walnut);">Payment Method</span>
+                        <span>${orderPaymentIcon(o)} ${esc(orderPaymentLabel(o))}</span>
+                    </div>
+                </div>
+
+                <div style="margin:24px 0;">
+                    <h3 style="margin:0 0 16px;font-size:16px;color:var(--walnut);">Order Items</h3>
+                    ${o.items.map(it => {
+                        const m = orderItemMed(it);
+                        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--stone);">
+                            <div style="display:flex;align-items:center;gap:12px;flex:1;">
+                                ${medPicture(m, 48)}
+                                <div>
+                                    <div style="font-weight:500;color:var(--walnut);">${esc(m.name)}</div>
+                                    <div style="font-size:13px;color:var(--walnut-soft);">Qty: ${it.qty}</div>
+                                </div>
+                            </div>
+                            <div style="font-weight:600;color:var(--walnut);white-space:nowrap;margin-left:16px;">${money(it.price * it.qty)}</div>
+                        </div>`;
+                    }).join('')}
+                </div>
+
+                <div style="border-top:2px solid var(--stone);padding-top:20px;margin-top:24px;">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:12px;font-size:15px;">
+                        <span>Subtotal</span>
+                        <span>${money(subtotal)}</span>
+                    </div>
+                    ${deliveryFee > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:12px;font-size:15px;">
+                        <span>Delivery Fee</span>
+                        <span>${money(deliveryFee)}</span>
+                    </div>` : ''}
+                    <div style="display:flex;justify-content:space-between;padding-top:12px;border-top:1px solid var(--stone);">
+                        <span style="font-weight:700;font-size:18px;color:var(--walnut);">Total</span>
+                        <span style="font-weight:700;font-size:18px;color:var(--sage-dark);">${money(total)}</span>
+                    </div>
+                </div>
+
+                <div style="margin-top:32px;padding:20px;background:var(--sage-tint);border-radius:8px;text-align:center;">
+                    <p style="margin:0 0 8px;font-size:14px;color:var(--walnut-soft);">A confirmation email has been sent to</p>
+                    <p style="margin:0 0 16px;font-weight:600;color:var(--walnut);">${esc(cust.email)}</p>
+                    <p style="margin:0;font-size:13px;color:var(--walnut-soft);">The pharmacy will prepare your order shortly.</p>
+                </div>
+
+                <div style="margin-top:32px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+                    <button class="btn btn-primary" onclick="App.setView('customer','orders')">View All Orders</button>
+                    <button class="btn btn-outline" onclick="App.setView('customer','home')">Continue Shopping</button>
+                </div>
+            </div>`;
+        }
+
         /* ---------- Payment methods ---------- */
         const PAYMENT_METHODS = [
             { id: 'card', label: 'Card', icon: 'card' },
@@ -5313,7 +5410,6 @@
             if (v === 'orders') return staffOrders();
             if (v === 'orderDetail') return staffOrderDetail();
             if (v === 'listings') return staffListings();
-            if (v === 'inventory') return staffInventory();
             if (v === 'returns') return staffReturns();
             if (v === 'notices') return staffNotifications();
             if (v === 'messages') return staffMessages();
@@ -6484,10 +6580,12 @@
             },
 
             async registerCustomer() {
-                const name = (document.getElementById('regName') || {}).value?.trim();
+                const firstName = (document.getElementById('regFirstName') || {}).value?.trim();
+                const lastName = (document.getElementById('regLastName') || {}).value?.trim();
                 const email = (document.getElementById('regEmail') || {}).value?.trim();
                 const pass = (document.getElementById('regPassword') || {}).value;
-                if (!name || !email || !pass) { toast('Fill in all fields.', 'error'); return; }
+                if (!firstName || !lastName || !email || !pass) { toast('Fill in all fields.', 'error'); return; }
+                const name = firstName + ' ' + lastName;
                 if (DB.customers.some(c => c.email.toLowerCase() === email.toLowerCase())) { toast(
                         'Email already exists.', 'error'); return; }
                 authFlowInProgress = true;
@@ -6819,8 +6917,8 @@
                 sendReceiptEmail(newOrder);
                 delete state.carts[custId];
                 state.checkout = { fulfillment: 'pickup', addressId: null, paymentMethod: 'card', processing: false };
-                state.customer.view = 'orders';
-                toast('Order #' + id.replace('o', '') + ' placed!', 'success');
+                state.customer.view = 'receipt';
+                state.customer.orderId = id;
                 update();
             },
 
