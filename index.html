@@ -3372,7 +3372,7 @@
                 notifCompose: { target: 'all', customerId: '' }, addingStaff: false, editStaffId: null },
             admin: { view: 'approvals', editCustomerId: null, editAdminId: null, addingAdmin: false,
                 editPageKey: null, addingPromo: false, editPromoId: null, editingBanner: false,
-                addingFaq: false, editFaqId: null, auditFilter: '' },
+                addingFaq: false, editFaqId: null, auditFilter: '', productFilter: 'all' },
             search: { query: '', category: 'All', pharmacy: 'All', brand: 'All', sort: 'newest', priceMin: '', priceMax: '' },
             carts: {},
             checkout: { fulfillment: 'pickup', addressId: null, paymentMethod: 'card', processing: false },
@@ -4158,6 +4158,7 @@
                 return [
                     ['approvals', 'Registry', pendingApprovals],
                     ['accounts', 'Accounts', 0],
+                    ['listings', 'The Shelf', 0],
                     ['inventory', 'Inventory', 0],
                     ['catalog', 'Herbal Index', 0],
                     ['orders', 'All Orders', 0],
@@ -5981,6 +5982,7 @@
             const v = state.admin.view;
             if (v === 'approvals') return adminApprovals();
             if (v === 'accounts') return adminAccounts();
+            if (v === 'listings') return adminListings();
             if (v === 'inventory') return adminInventory();
             if (v === 'catalog') return adminCatalog();
             if (v === 'orders') return adminOrders();
@@ -6299,6 +6301,52 @@
                     <td class="text-left">${esc(e.action)}</td>
                   </tr>`).join('')}
                 </table></div>${paginationHtml('adminAudit', rowsPage.page, rowsPage.totalPages)}` : `<div class="empty">${illustration('mortar')}<div class="empty-title">No activity yet</div>Actions taken across the platform will appear here.</div>`}</div>`;
+        }
+
+        function adminListings() {
+            const allMeds = DB.medicines;
+            const counts = {
+                all: allMeds.length,
+                active: allMeds.filter(m => productStatus(m) === 'active').length,
+                inactive: allMeds.filter(m => productStatus(m) === 'inactive').length,
+                out: allMeds.filter(m => productStatus(m) === 'out').length,
+                rx: allMeds.filter(m => m.prescription).length,
+            };
+
+            const f = state.admin.productFilter || 'all';
+            const filtered = allMeds.filter(m => f === 'all' ? true : f === 'rx' ? m.prescription : productStatus(m) === f);
+            const medsPage = paginate(filtered, 'adminListings');
+
+            return `<div class="row-between" style="align-items:flex-end;flex-wrap:wrap;gap:10px;">
+                  <div>
+                    <h2 class="section-title" style="margin-bottom:2px;">The Shelf</h2>
+                    <p class="section-sub" style="margin:0;">Platform-wide product listings · ${allMeds.length} product${allMeds.length===1?'':'s'}</p>
+                  </div>
+                </div>
+                <div class="chip-row" style="margin:14px 0;">
+                  ${[['all','All'],['active','Active'],['inactive','Inactive'],['out','Out of stock'],['rx','Prescription']].map(([k,label])=>
+                    `<button class="chip ${f===k?'active':''}" onclick="App.setProductFilterAdmin('${k}')">${label} (${counts[k]})</button>`).join('')}
+                </div>
+                <div class="card"><div class="table-wrap"><table>
+                  <tr><th class="text-left">Product</th><th class="text-left">Pharmacy</th><th class="text-left">Category</th><th class="text-right">Price</th><th class="text-right">Stock</th><th class="col-status">Status</th><th class="col-actions">Actions</th></tr>
+                  ${medsPage.items.map(m=>{
+                    const st = productStatus(m);
+                    const ph = pharmacy(m.pharmacyId);
+                    return `<tr>
+                      <td class="text-left"><div class="cell-with-thumb">${medPicture(m,48)}<span class="cell-text">${esc(m.name)} ${m.prescription?'<span class="badge badge-pending">Rx</span>':''}<br><span class="hint">${esc((m.description||'').slice(0,50))}${(m.description||'').length>50?'…':''}</span></span></div></td>
+                      <td class="text-left">${ph ? esc(ph.name) : '<span class="hint">(orphaned)</span>'}</td>
+                      <td class="text-left">${catIcon(m.category)} ${esc(m.category)}</td>
+                      <td class="text-right">${money(m.price)}</td>
+                      <td class="text-right"><span class="${stockDotClass(m.stock)}"></span> ${m.stock}</td>
+                      <td class="col-status"><span class="badge ${PRODUCT_STATUS_BADGE[st]}">${PRODUCT_STATUS_LABEL[st]}</span></td>
+                      <td class="col-actions">
+                        <button class="btn btn-outline btn-sm" onclick="App.toggleProductStatusAdmin('${m.id}')">${(m.status||'active')==='active'?'Deactivate':'Activate'}</button>
+                        <button class="btn btn-danger btn-sm" onclick="App.removeMedicineAdmin('${m.id}')">Delete</button>
+                      </td>
+                    </tr>`;
+                  }).join('') || `<tr><td colspan="7" class="hint">No products match this filter.</td></tr>`}
+                </table></div>${paginationHtml('adminListings', medsPage.page, medsPage.totalPages)}</div>
+                <p class="hint">Admin can activate/deactivate products and remove them. Inactive products are hidden from shoppers.</p>`;
         }
 
         function adminInventory() {
@@ -7448,6 +7496,16 @@
                ===================================================== */
             setProductFilter(f) { state.staff.productFilter = f;
                 update(); },
+            setProductFilterAdmin(f) { state.admin.productFilter = f;
+                update(); },
+            toggleProductStatusAdmin(id) {
+                const m = medicine(id);
+                if (!m) { toast('Product not found.', 'error'); return; }
+                m.status = (m.status || 'active') === 'active' ? 'inactive' : 'active';
+                sbUpsert('medicines', m);
+                toast(m.status === 'active' ? 'Product activated.' : 'Product deactivated.', 'success');
+                update();
+            },
             startAddProduct() {
                 state.staff.editMedId = 'new';
                 state.staff.productDraftImages = [];
