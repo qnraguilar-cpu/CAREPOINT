@@ -4144,7 +4144,6 @@
                 const openReturns = pharmacyReturns(ph.id).filter(r => r.status === 'requested').length;
                 return [
                     ['orders', 'Workbench', pending],
-                    ['listings', 'The Shelf', 0],
                     ['returns', 'Returns', openReturns],
                     ['messages', 'Counter', openMsgs],
                     ['sales', 'Sales', 0],
@@ -5409,7 +5408,6 @@
             const v = state.staff.view;
             if (v === 'orders') return staffOrders();
             if (v === 'orderDetail') return staffOrderDetail();
-            if (v === 'listings') return staffListings();
             if (v === 'returns') return staffReturns();
             if (v === 'notices') return staffNotifications();
             if (v === 'messages') return staffMessages();
