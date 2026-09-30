@@ -4158,6 +4158,7 @@
                 return [
                     ['approvals', 'Registry', pendingApprovals],
                     ['accounts', 'Accounts', 0],
+                    ['inventory', 'Inventory', 0],
                     ['catalog', 'Herbal Index', 0],
                     ['orders', 'All Orders', 0],
                     ['flags', 'Flags', openFlags],
@@ -5980,6 +5981,7 @@
             const v = state.admin.view;
             if (v === 'approvals') return adminApprovals();
             if (v === 'accounts') return adminAccounts();
+            if (v === 'inventory') return adminInventory();
             if (v === 'catalog') return adminCatalog();
             if (v === 'orders') return adminOrders();
             if (v === 'flags') return adminFlags();
@@ -6297,6 +6299,72 @@
                     <td class="text-left">${esc(e.action)}</td>
                   </tr>`).join('')}
                 </table></div>${paginationHtml('adminAudit', rowsPage.page, rowsPage.totalPages)}` : `<div class="empty">${illustration('mortar')}<div class="empty-title">No activity yet</div>Actions taken across the platform will appear here.</div>`}</div>`;
+        }
+
+        function adminInventory() {
+            const allMeds = DB.medicines;
+            const allPharmacies = DB.pharmacies.filter(p => p.status === 'approved');
+            const totalProducts = allMeds.length;
+            const totalUnits = allMeds.reduce((s, m) => s + m.stock, 0);
+            const lowStock = allMeds.filter(m => m.stock > 0 && m.stock <= 10);
+            const outOfStock = allMeds.filter(m => m.stock === 0);
+            const totalValue = allMeds.reduce((s, m) => s + m.stock * m.price, 0);
+
+            const medsPage = paginate(allMeds, 'adminInventory');
+
+            return `<h2 class="section-title">Inventory Management</h2><p class="section-sub">Platform-wide inventory — manage stock levels across all pharmacies.</p>
+                <div class="grid grid-stats" style="margin-bottom:16px;">
+                  <div class="stat-jar"><div class="stat-num">${totalProducts}</div><div class="stat-label">Total Products</div></div>
+                  <div class="stat-jar"><div class="stat-num">${totalUnits}</div><div class="stat-label">Total Units</div></div>
+                  <div class="stat-jar"><div class="stat-num">${lowStock.length}</div><div class="stat-label">Low Stock</div></div>
+                  <div class="stat-jar"><div class="stat-num">${outOfStock.length}</div><div class="stat-label">Out of Stock</div></div>
+                  <div class="stat-jar"><div class="stat-num">${money(totalValue)}</div><div class="stat-label">Total Value</div></div>
+                </div>
+                ${(lowStock.length || outOfStock.length) ? `<div class="card" style="border:1.5px solid var(--yarrow);margin-bottom:16px;">
+                    <h3 style="margin-top:0;font-size:15px;">${icon('bell',15)} Stock Alerts</h3>
+                    ${outOfStock.slice(0, 5).map(m=>{
+                        const ph = pharmacy(m.pharmacyId);
+                        return `<div class="row-between" style="padding:9px 0;border-bottom:1px solid var(--stone);">
+                        <span><span class="badge badge-cancelled">Out of stock</span> ${esc(m.name)} <span class="hint">· ${ph ? esc(ph.name) : 'Unknown'}</span></span>
+                        <button class="btn btn-sage btn-sm" onclick="App.adjustStockAdmin('${m.id}',25)">Restock +25</button>
+                      </div>`;
+                    }).join('')}
+                    ${lowStock.slice(0, 5).map(m=>{
+                        const ph = pharmacy(m.pharmacyId);
+                        return `<div class="row-between" style="padding:9px 0;border-bottom:1px solid var(--stone);">
+                        <span><span class="badge badge-pending">Low</span> ${esc(m.name)} — ${m.stock} left <span class="hint">· ${ph ? esc(ph.name) : 'Unknown'}</span></span>
+                        <button class="btn btn-sage btn-sm" onclick="App.adjustStockAdmin('${m.id}',25)">Restock +25</button>
+                      </div>`;
+                    }).join('')}
+                    ${(outOfStock.length + lowStock.length > 10) ? `<p class="hint" style="margin:8px 0 0;">Showing top alerts. See full list below.</p>` : ''}
+                  </div>` : `<div class="card" style="margin-bottom:16px;"><p class="hint" style="margin:0;">${icon('leaf',14)} All products are in stock.</p></div>`}
+                <div class="card">
+                  <h3 style="margin-top:0;font-size:15px;">All Products</h3>
+                  <div class="table-wrap"><table>
+                    <tr><th class="text-left">Product</th><th class="text-left">Pharmacy</th><th class="text-left">Category</th><th class="text-right">Price</th><th class="text-right">Stock</th><th class="text-right">Sold</th><th class="col-status">Status</th><th class="col-actions">Actions</th></tr>
+                    ${medsPage.items.map(m=>{
+                      const ph = pharmacy(m.pharmacyId);
+                      const st = m.stock === 0 ? 'out' : m.stock <= 10 ? 'low' : 'ok';
+                      const badge = st==='out' ? '<span class="badge badge-cancelled">Out</span>' : st==='low' ? '<span class="badge badge-pending">Low</span>' : '<span class="badge badge-active">In stock</span>';
+                      return `<tr>
+                        <td class="text-left"><div class="cell-with-thumb">${medPicture(m,42)}<span class="cell-text">${esc(m.name)}</span></div></td>
+                        <td class="text-left">${ph ? esc(ph.name) : '<span class="hint">(orphaned)</span>'}</td>
+                        <td class="text-left">${catIcon(m.category)} ${esc(m.category)}</td>
+                        <td class="text-right">${money(m.price)}</td>
+                        <td class="text-right"><span class="${m.stock===0?'stock-dot-out':m.stock<=10?'stock-dot-low':'stock-dot-ok'}"></span> ${m.stock}</td>
+                        <td class="text-right">${m.sold||0}</td>
+                        <td class="col-status">${badge}</td>
+                        <td class="col-actions">
+                          <button class="btn btn-ghost btn-sm" onclick="App.adjustStockAdmin('${m.id}',-1)">−1</button>
+                          <button class="btn btn-ghost btn-sm" onclick="App.adjustStockAdmin('${m.id}',1)">+1</button>
+                          <button class="btn btn-outline btn-sm" onclick="App.adjustStockAdmin('${m.id}',10)">+10</button>
+                          <button class="btn btn-outline btn-sm" onclick="App.setStockPromptAdmin('${m.id}')">Set…</button>
+                        </td>
+                      </tr>`;
+                    }).join('')}
+                  </table></div>
+                  ${paginationHtml('adminInventory', medsPage.page, medsPage.totalPages)}
+                </div>`;
         }
 
         function adminCatalog() {
@@ -7105,6 +7173,21 @@
             adjustStock(id, delta) { const mm = medicine(id); mm.stock = Math.max(0, mm.stock + delta);
                 sbUpsert('medicines', mm);
                 update(); },
+            adjustStockAdmin(id, delta) { const mm = medicine(id); mm.stock = Math.max(0, mm.stock + delta);
+                sbUpsert('medicines', mm);
+                toast('Stock updated.', 'success');
+                update(); },
+            setStockPromptAdmin(id) {
+                const mm = medicine(id);
+                const val = prompt('Set stock level for ' + mm.name + ':', mm.stock);
+                if (val === null) return;
+                const num = parseInt(val, 10);
+                if (isNaN(num) || num < 0) { toast('Enter a valid number.', 'error'); return; }
+                mm.stock = num;
+                sbUpsert('medicines', mm);
+                toast('Stock set to ' + num + '.', 'success');
+                update();
+            },
             removeMedicine(id) {
                 if (!confirm('Remove this listing?')) return;
                 DB.medicines = DB.medicines.filter(m => m.id !== id);
