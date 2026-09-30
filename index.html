@@ -4141,9 +4141,12 @@
                 const ph = currentStaffPharmacy();
                 const pending = DB.orders.filter(o => o.pharmacyId === ph.id && o.status === 'pending').length;
                 const openMsgs = unreadForStaffPharmacy(ph.id);
+                const lowStock = lowStockMedicines(ph.id).length + outOfStockMedicines(ph.id).length;
                 const openReturns = pharmacyReturns(ph.id).filter(r => r.status === 'requested').length;
                 return [
                     ['orders', 'Workbench', pending],
+                    ...(isPharmacyOwner() ? [['listings', 'The Shelf', 0]] : []),
+                    ...(isPharmacyOwner() ? [['inventory', 'Inventory', lowStock]] : []),
                     ['returns', 'Returns', openReturns],
                     ['messages', 'Counter', openMsgs],
                     ['sales', 'Sales', 0],
@@ -4158,8 +4161,6 @@
                 return [
                     ['approvals', 'Registry', pendingApprovals],
                     ['accounts', 'Accounts', 0],
-                    ['listings', 'The Shelf', 0],
-                    ['inventory', 'Inventory', 0],
                     ['catalog', 'Herbal Index', 0],
                     ['orders', 'All Orders', 0],
                     ['flags', 'Flags', openFlags],
@@ -5410,6 +5411,8 @@
             const v = state.staff.view;
             if (v === 'orders') return staffOrders();
             if (v === 'orderDetail') return staffOrderDetail();
+            if (v === 'listings') return staffListings();
+            if (v === 'inventory') return staffInventory();
             if (v === 'returns') return staffReturns();
             if (v === 'notices') return staffNotifications();
             if (v === 'messages') return staffMessages();
@@ -5982,8 +5985,6 @@
             const v = state.admin.view;
             if (v === 'approvals') return adminApprovals();
             if (v === 'accounts') return adminAccounts();
-            if (v === 'listings') return adminListings();
-            if (v === 'inventory') return adminInventory();
             if (v === 'catalog') return adminCatalog();
             if (v === 'orders') return adminOrders();
             if (v === 'flags') return adminFlags();
