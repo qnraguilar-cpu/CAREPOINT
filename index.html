@@ -21,98 +21,30 @@
 
     <style>
         :root {
-            /* Refined brand palette — warmer, more professional */
-            --terracotta: #B86A45;
-            --terracotta-deep: #8B4F2F;
+            --terracotta: #C17F59;
             --terracotta-dark: #A3623F;
             --terracotta-tint: #F3E2D6;
-            --terracotta-glow: rgba(184, 106, 69, 0.35);
-
             --sage: #7D9B76;
             --sage-dark: #5F7A59;
             --sage-tint: #E4EAE1;
-            --sage-glow: rgba(125, 155, 118, 0.35);
-
             --yarrow: #DBAF4A;
-            --yarrow-deep: #C99C33;
             --yarrow-tint: #FBEEDD;
-            --yarrow-glow: rgba(219, 175, 74, 0.35);
-
             --parchment: #FAF7F2;
             --surface: #FFFCF8;
-            --surface-elevated: #FFFFFF;
-
-            --walnut: #1E1511;
-            --walnut-soft: #4A3A2E;
-            --walnut-faint: #7A6B5E;
-            --walnut-mist: rgba(30, 21, 17, 0.04);
-
+            --walnut: #2C1E16;
+            --walnut-soft: #5C4A3E;
+            --walnut-faint: #6E5D4F;
             --stone: #E8E3DD;
             --stone-dark: #D8D1C8;
-            --stone-deep: #C4BDB3;
-
             --danger: #B25C4E;
             --danger-tint: #F3E1DC;
-
-            --focus-ring: rgba(184, 106, 69, 0.45);
-
             --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
             --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-
-            /* Refined radius scale */
-            --radius-xs: 6px;
-            --radius-sm: 10px;
-            --radius-md: 14px;
-            --radius-lg: 18px;
-            --radius-xl: 24px;
-            --radius-2xl: 32px;
             --radius-organic: 16px 8px 16px 8px;
-            --radius-organic-lg: 24px 12px 24px 12px;
-            --radius-pill: 999px;
-
-            /* Layered shadow system */
-            --shadow-xs: 0 1px 2px rgba(30, 21, 17, 0.05);
-            --shadow-sm: 0 2px 8px rgba(30, 21, 17, 0.06);
-            --shadow-md: 0 6px 20px rgba(30, 21, 17, 0.08);
-            --shadow-lg: 0 12px 32px rgba(30, 21, 17, 0.10);
-            --shadow-xl: 0 20px 48px rgba(30, 21, 17, 0.12);
-            --shadow-inner: inset 0 2px 6px rgba(30, 21, 17, 0.04);
-
-            /* Glassmorphism */
-            --glass-bg: rgba(255, 252, 248, 0.72);
-            --glass-border: rgba(216, 209, 200, 0.6);
-            --glass-blur: saturate(180%) blur(16px);
-
-            /* Motion */
-            --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-            --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-            --duration-fast: 120ms;
-            --duration-base: 200ms;
-            --duration-slow: 320ms;
-
-            /* Typography scale */
-            --text-xs: 0.7rem;
-            --text-sm: 0.8125rem;
-            --text-base: 0.9375rem;
-            --text-lg: 1.0625rem;
-            --text-xl: 1.25rem;
-            --text-2xl: 1.5rem;
-            --text-3xl: 2rem;
-            --text-4xl: 2.5rem;
-            --text-5xl: clamp(2.5rem, 5vw, 4rem);
-
-            /* Spacing scale */
-            --space-1: 4px;
-            --space-2: 8px;
-            --space-3: 12px;
-            --space-4: 16px;
-            --space-5: 20px;
-            --space-6: 24px;
-            --space-8: 32px;
-            --space-10: 40px;
-            --space-12: 48px;
-            --space-16: 64px;
+            --radius-organic-lg: 22px 10px 22px 10px;
+            --shadow-soft: 0 4px 18px rgba(44, 30, 22, 0.07);
+            --shadow-lift: 0 10px 28px rgba(44, 30, 22, 0.12);
+            --shadow-image: 0 8px 24px rgba(44, 30, 22, 0.13);
         }
         * {
             box-sizing: border-box;
@@ -133,20 +65,14 @@
             height: auto;
             overflow-x: hidden;
             overflow-y: auto;
-            background: linear-gradient(180deg, #17120E 0%, #2A1D15 35%, #3C2B22 65%, #FAF7F2 100%);
-            background-image:
-                radial-gradient(ellipse at 20% 0%, rgba(219,175,74,0.12) 0%, transparent 60%),
-                radial-gradient(ellipse at 80% 100%, rgba(125,155,118,0.10) 0%, transparent 55%),
-                radial-gradient(circle at 50% 50%, rgba(184,106,69,0.05) 0%, transparent 70%),
-                radial-gradient(rgba(201,127,89,0.06) 1px, transparent 1px);
-            background-size: 100% 100%, 100% 100%, 100% 100%, 14px 14px;
-            color: #FAF7F2;
+            background: var(--parchment);
+            background-image: radial-gradient(rgba(44, 30, 22, 0.025) 1px, transparent 1px);
+            background-size: 14px 14px;
+            color: var(--walnut);
             font-family: var(--font-body);
             font-size: 16px;
-            line-height: 1.65;
+            line-height: 1.6;
             -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-            text-rendering: optimizeLegibility;
         }
         a {
             color: inherit;
@@ -162,25 +88,13 @@
             font-family: inherit;
             font-size: 15px;
         }
-        h1, h2, h3, h4 {
+        h1,
+        h2,
+        h3 {
             font-family: var(--font-display);
-            color: var(--walnut);
-            font-weight: 700;
-            line-height: 1.05;
-            letter-spacing: -0.03em;
-            text-wrap: balance;
         }
-        h1 { letter-spacing: -0.035em; }
-        h2 { letter-spacing: -0.025em; }
-
         ::selection {
             background: var(--yarrow-tint);
-            color: var(--walnut);
-        }
-
-
-        .hero-gradient-overlay {
-            background: linear-gradient(135deg, rgba(26,18,16,0.88) 0%, rgba(44,30,22,0.65) 60%, rgba(201,127,89,0.25) 100%);
         }
 
         .fly-particle {
@@ -249,14 +163,13 @@
         }
 
         header.topbar {
-            background: rgba(250, 247, 242, 0.88);
-            backdrop-filter: var(--glass-blur);
-            -webkit-backdrop-filter: var(--glass-blur);
-            border-bottom: 1px solid rgba(216, 209, 200, 0.5);
+            background: rgba(250, 247, 242, 0.82);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--stone-dark);
             position: sticky;
             top: 0;
             z-index: 50;
-            box-shadow: 0 1px 0 rgba(30,21,17,0.04);
         }
         .topbar-inner {
             max-width: 1180px;
@@ -635,26 +548,11 @@
         }
 
         .card {
-            background: var(--surface-elevated);
+            background: var(--surface);
             border: 1px solid var(--stone-dark);
-            border-radius: var(--radius-xl);
-            padding: 24px;
-            box-shadow: var(--shadow-sm), 0 1px 3px rgba(30,21,17,0.03);
-            transition: box-shadow var(--duration-base) var(--ease-out), transform var(--duration-base) var(--ease-out);
-            position: relative;
-            overflow: hidden;
-        }
-        .card::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0; height: 3px;
-            background: linear-gradient(90deg, var(--terracotta) 0%, var(--yarrow) 50%, var(--sage) 100%);
-            opacity: 0.7;
-            pointer-events: none;
-        }
-        .card:hover {
-            box-shadow: var(--shadow-lg), 0 1px 3px rgba(30,21,17,0.05);
-            transform: translateY(-3px);
+            border-radius: var(--radius-organic-lg);
+            padding: 22px;
+            box-shadow: var(--shadow-soft);
         }
         .card+.card {
             margin-top: 16px;
@@ -700,41 +598,26 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
-            border-radius: var(--radius-pill);
+            gap: 7px;
+            border-radius: 999px;
             border: 1.5px solid transparent;
-            padding: 11px 24px;
-            font-size: 0.875rem;
-            font-weight: 600;
-            transition: all var(--duration-base) var(--ease-out);
+            padding: 11px 22px;
+            font-size: 13.5px;
+            font-weight: 700;
+            transition: all .18s ease;
             font-family: var(--font-body);
-            letter-spacing: -0.01em;
-            box-shadow: var(--shadow-xs);
-        }
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: var(--shadow-md);
-        }
-        .btn:active {
-            transform: translateY(0) scale(0.99);
-            box-shadow: var(--shadow-xs);
-            transition-duration: var(--duration-fast);
         }
         .btn-primary {
-            background: linear-gradient(135deg, var(--terracotta) 0%, var(--terracotta-deep) 100%);
+            background: var(--terracotta);
             color: #fff;
-            border-color: transparent;
         }
         .btn-primary:hover {
-            background: linear-gradient(135deg, var(--terracotta-dark) 0%, #7A3E22 100%);
-            box-shadow: 0 10px 24px var(--terracotta-glow), var(--shadow-md);
+            background: var(--terracotta-dark);
         }
         .btn-primary:disabled {
             background: var(--stone-dark);
             color: var(--walnut-faint);
             cursor: not-allowed;
-            box-shadow: none;
-            transform: none;
         }
         .btn-outline {
             background: var(--surface);
@@ -7772,19 +7655,7 @@
                     .totals div{display:flex;justify-content:space-between;padding:4px 0;}
                     .grand{border-top:2px solid #2C1E16;font-weight:700;margin-top:6px;padding-top:8px;}
                     .foot{margin-top:34px;font-size:11.5px;color:#6E5D4F;border-top:1px solid #E8E3DD;padding-top:10px;}
-          
-        .glass-nav {
-            position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
-            backdrop-filter: blur(20px) saturate(140%);
-            -webkit-backdrop-filter: blur(20px) saturate(140%);
-            background: rgba(26,18,16,0.72);
-            border-bottom: 1px solid rgba(201,127,89,0.15);
-            padding: 18px 5%; display: flex; align-items: center; justify-content: space-between;
-        }
-        .glass-nav a { color: #FAF7F2; font-family: var(--font-body); font-weight: 500; letter-spacing: 0.05em; font-size: 13px; text-transform: uppercase; }
-        .glass-nav .logo { font-family: var(--font-display); font-size: 28px; letter-spacing: -0.04em; font-weight: 600; }
-
-        </style></head><body>
+                  </style></head><body>
                   <div class="head">
                     <div>
                       <h1>${esc(ph ? ph.name : DB.settings.platformName)}</h1>
